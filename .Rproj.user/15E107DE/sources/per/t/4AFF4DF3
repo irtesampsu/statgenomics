@@ -1,0 +1,26 @@
+{
+    "id": "4AFF4DF3",
+    "path": "~/Courses/STAT 555/statgenomics-project/scripts/rna_seq/q4_rna_clustering_all_cells.R",
+    "project_path": "scripts/rna_seq/q4_rna_clustering_all_cells.R",
+    "type": "r_source",
+    "hash": "2064595022",
+    "contents": "",
+    "dirty": false,
+    "created": 1776358985513.0,
+    "source_on_save": false,
+    "relative_order": 10,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "10,27",
+        "scrollLine": "86"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1776358431,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1776358431,
+    "read_only": false,
+    "read_only_alternatives": []
+}

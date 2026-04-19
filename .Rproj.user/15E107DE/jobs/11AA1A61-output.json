@@ -1,0 +1,6 @@
+[1,"Installing 'pheatmap' ...\n"]
+[2,"trying URL 'https://cran.rstudio.com/bin/macosx/big-sur-arm64/contrib/4.5/pheatmap_1.0.13.tgz'\n"]
+[2,"Content type 'application/x-gzip' length 78494 bytes (76 KB)\n==================================================\ndownloaded 76 KB\n\n"]
+[1,"The downloaded binary packages are in\n"]
+[1,"\t/var/folders/ck/bbcltyrd6qn8_gw_xshcdkch0000gn/T//Rtmp9UimpD/downloaded_packages\n"]
+[2,"\n\n✔ Package 'pheatmap' successfully installed.\n"]

@@ -1,0 +1,26 @@
+{
+    "id": "5EBBCE7F",
+    "path": "~/Courses/STAT 555/statgenomics-project/results/deseq2/go_enrichment_deseq2.csv",
+    "project_path": "results/deseq2/go_enrichment_deseq2.csv",
+    "type": "text",
+    "hash": "2452594016",
+    "contents": "",
+    "dirty": false,
+    "created": 1776352323258.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "21,37",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1776352224,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1776352224,
+    "read_only": false,
+    "read_only_alternatives": []
+}

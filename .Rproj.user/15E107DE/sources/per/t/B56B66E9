@@ -1,0 +1,26 @@
+{
+    "id": "B56B66E9",
+    "path": "~/Courses/STAT 555/statgenomics-project/results/deseq2/de_genes_deseq2.csv",
+    "project_path": "results/deseq2/de_genes_deseq2.csv",
+    "type": "text",
+    "hash": "3803343482",
+    "contents": "",
+    "dirty": false,
+    "created": 1776360405813.0,
+    "source_on_save": false,
+    "relative_order": 13,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "0,26",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1776352196,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1776352196,
+    "read_only": false,
+    "read_only_alternatives": []
+}

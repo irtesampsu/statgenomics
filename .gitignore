@@ -1,0 +1,6 @@
+*.Rproj*
+*.RData
+*.Rhistory
+*.md
+project_description.txt
+

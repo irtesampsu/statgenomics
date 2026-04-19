@@ -1,0 +1,26 @@
+{
+    "id": "1847B3EB",
+    "path": "~/Courses/STAT 555/statgenomics-project/results/limma_voom/de_genes_limma_voom.csv",
+    "project_path": "results/limma_voom/de_genes_limma_voom.csv",
+    "type": "text",
+    "hash": "1407561015",
+    "contents": "",
+    "dirty": false,
+    "created": 1776352472651.0,
+    "source_on_save": false,
+    "relative_order": 6,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "5065,53",
+        "scrollLine": "5050"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1776352434,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1776352434,
+    "read_only": false,
+    "read_only_alternatives": []
+}

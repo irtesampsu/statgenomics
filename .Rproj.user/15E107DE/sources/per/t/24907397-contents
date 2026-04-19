@@ -1,0 +1,22 @@
+# Project Structure
+
+- `scripts/rna_seq/`
+  - pairwise RNA-seq differential expression scripts
+  - Q4 all-cell RNA clustering script
+- `scripts/atac_seq/`
+  - pairwise ATAC-seq differential accessibility script
+  - Q8 all-cell ATAC clustering script
+- `data/rna_seq/`
+  - ScriptSeq RNA-seq input tables
+- `data/atac_seq/`
+  - ATAC-seq bigBed peak files
+- `results/deseq2/` and `results/limma_voom/`
+  - pairwise RNA-seq outputs
+- `results/atac_seq/`
+  - pairwise ATAC-seq outputs
+- `results/clustering/`
+  - Q4 and Q8 all-cell clustering outputs
+- `results/summary/`
+  - report-ready RNA summary tables and text
+
+Root-level `*.R` files are lightweight wrappers that preserve the old entry points.

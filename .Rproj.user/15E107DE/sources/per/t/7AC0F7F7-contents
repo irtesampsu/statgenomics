@@ -1,0 +1,57 @@
+RNA-seq Summary for CMP vs Erythroblast
+=======================================
+
+Question 1. Differentially expressed genes
+DESeq2 identified 4799 significant genes (padj < 0.05 and |log2FC| > 1).
+limma-voom identified 5071 significant genes (adj.P.Val < 0.05 and |logFC| > 1).
+The two methods shared 4190 DE genes after matching Ensembl IDs without version suffixes.
+
+Top genes higher in Erythroblast
+DESeq2: F930017D23Rik (18.99), Slfn14 (17.46), Apol11a (17.40), ENSMUSG00000085483 (16.38), Hbq1b (15.75), Nhlrc4 (15.64), Ccr3 (15.46), Ighg2c (15.37), Apol10a (15.34), Slc4a1 (15.24)
+limma-voom: Slfn14 (17.48), F930017D23Rik (16.11), Apol11b (15.76), Slc4a1 (15.21), ENSMUSG00000101249 (14.92), Alas2 (14.70), Apol11a (14.69), Ccdc92b (14.48), Reln (13.93), Mageb16 (13.84)
+
+Top genes higher in CMP
+DESeq2: Eya1 (-10.90), Tek (-10.34), Prrg4 (-9.53), Cbx2 (-9.33), Ptk7 (-9.25), Pofut3 (-9.15), ENSMUSG00000104184 (-8.86), Rpl7a-ps11 (-8.70), ENSMUSG00000021867 (-8.70), Tmem254 (-8.70)
+limma-voom: Eya1 (-9.02), Tek (-8.56), Prrg4 (-7.88), Cbx2 (-7.79), Ptk7 (-7.71), ENSMUSG00000104184 (-7.51), Pofut3 (-7.43), Rpl7a-ps11 (-7.43), ENSMUSG00000021867 (-7.27), Tmem254 (-7.27)
+
+Question 2. Functional enrichment of DE genes
+Top DESeq2 GO terms:
+ribosome biogenesis (FDR 1.29e-38, n=154)
+rRNA metabolic process (FDR 3.04e-31, n=126)
+rRNA processing (FDR 7.55e-29, n=109)
+homeostasis of number of cells (FDR 3.11e-28, n=171)
+myeloid cell homeostasis (FDR 4.36e-27, n=112)
+erythrocyte homeostasis (FDR 3.20e-25, n=95)
+erythrocyte differentiation (FDR 7.13e-23, n=88)
+phosphorylation (FDR 2.25e-18, n=154)
+positive regulation of innate immune response (FDR 1.75e-16, n=146)
+mitochondrion organization (FDR 2.06e-16, n=149)
+
+Top limma-voom GO terms:
+ribosome biogenesis (FDR 4.39e-35, n=150)
+homeostasis of number of cells (FDR 8.45e-29, n=174)
+rRNA metabolic process (FDR 2.19e-27, n=121)
+myeloid cell homeostasis (FDR 3.92e-27, n=113)
+erythrocyte homeostasis (FDR 2.10e-25, n=96)
+erythrocyte differentiation (FDR 7.84e-24, n=90)
+rRNA processing (FDR 9.63e-24, n=102)
+cytoplasmic translation (FDR 1.96e-20, n=96)
+translation at presynapse (FDR 1.06e-19, n=39)
+translation at synapse (FDR 3.31e-19, n=39)
+
+Question 3. Consistency between DESeq2 and limma-voom
+Shared DE genes: 4190
+Direction agreement among shared DE genes: 100.0%
+Top DESeq2 GO themes: ribosome biogenesis; rRNA metabolic process; rRNA processing; homeostasis of number of cells; myeloid cell homeostasis; erythrocyte homeostasis; erythrocyte differentiation; phosphorylation
+Top limma-voom GO themes: ribosome biogenesis; homeostasis of number of cells; rRNA metabolic process; myeloid cell homeostasis; erythrocyte homeostasis; erythrocyte differentiation; rRNA processing; cytoplasmic translation
+Interpretation: if the main biological themes are similar in both methods, the RNA-seq conclusions are robust even if gene rankings differ.
+
+Question 4. Sample relationships and clustering
+Use the PCA plots, sample correlation heatmaps, hierarchical clustering trees, and top-gene heatmaps from each method.
+Interpretation: replicates should cluster together, and CMP samples should separate from Erythroblast samples if the biology is strong and the data quality is good.
+
+Suggested short report summary
+Both DESeq2 and limma-voom detected strong transcriptional differences between CMP and Erythroblast, with 4799 and 5071 significant genes respectively.
+The methods shared 4190 DE genes, and 100.0% of shared genes had the same direction of change.
+GO enrichment from both methods highlighted erythrocyte differentiation, erythrocyte homeostasis, myeloid cell homeostasis, and ribosome/rRNA processing pathways.
+These results are biologically consistent with erythroblast maturation and increased biosynthetic activity during differentiation.

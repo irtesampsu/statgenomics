@@ -1,0 +1,167 @@
+# =========================
+# ATAC-seq with replicate consensus (FIXED + VALIDATION)
+# =========================
+
+suppressPackageStartupMessages({
+  library(rtracklayer)
+  library(GenomicRanges)
+  library(GenomeInfoDb)
+  library(DESeq2)
+  library(ggplot2)          # NEW
+  library(pheatmap)         # NEW
+  library(ChIPseeker)       # NEW
+  library(clusterProfiler)  # NEW
+  library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+  library(org.Mm.eg.db)
+})
+
+dir.create("results/atac_seq/pairwise_cmp_vs_ery", recursive = TRUE, showWarnings = FALSE)
+
+# ---- input ----
+files <- list(
+  CMP = c("data/atac_seq/CMP_rep1_ENCFF832UUS.bigBed", "data/atac_seq/CMP_rep2_ENCFF343PTQ.bigBed"),
+  Erythroblast = c("data/atac_seq/Erythroblast_rep1_ENCFF181AMY.bigBed", "data/atac_seq/Erythroblast_rep2_ENCFF616EWK.bigBed")
+)
+
+# ---- import peaks ----
+gr_list <- lapply(files, function(reps) {
+  lapply(reps, function(f) {
+    gr <- import(f, format = "bigBed")
+    seqlevelsStyle(gr) <- "UCSC"
+    return(gr)
+  })
+})
+
+# ---- replicate consensus per condition ----
+consensus_per_condition <- lapply(gr_list, function(reps) {
+  reduce(intersect(reps[[1]], reps[[2]]))
+})
+
+# ---- global consensus ----
+all_peaks <- Reduce(c, consensus_per_condition)
+all_peaks <- reduce(all_peaks)
+
+# ---- build count matrix ----
+get_signal <- function(gr, consensus) {
+  hits <- findOverlaps(consensus, gr)
+  signal <- numeric(length(consensus))
+  
+  if ("score" %in% colnames(mcols(gr))) {
+    signal[queryHits(hits)] <- signal[queryHits(hits)] +
+      mcols(gr)$score[subjectHits(hits)]
+  } else {
+    signal[queryHits(hits)] <- signal[queryHits(hits)] + 1
+  }
+  return(signal)
+}
+
+all_samples <- do.call(c, gr_list)
+count_mat <- sapply(all_samples, get_signal, consensus = all_peaks)
+count_mat <- as.matrix(count_mat)
+
+colnames(count_mat) <- c("CMP_rep1","CMP_rep2","Erythroblast_rep1","Erythroblast_rep2")
+condition <- factor(c("CMP","CMP","Erythroblast","Erythroblast"))
+
+# ---- DESeq2 ----
+dds <- DESeqDataSetFromMatrix(
+  countData = round(count_mat),
+  colData = data.frame(row.names = colnames(count_mat), condition),
+  design = ~ condition
+)
+
+dds <- DESeq(dds, fitType = "local")   # FIX: better for ATAC
+res <- results(dds, contrast = c("condition","Erythroblast","CMP"))
+
+# ---- attach coordinates ----
+res_df <- as.data.frame(res)
+res_df$chr   <- as.character(seqnames(all_peaks))
+res_df$start <- start(all_peaks)
+res_df$end   <- end(all_peaks)
+
+# ---- filter DARs ----
+dar_idx <- which(!is.na(res_df$padj) & res_df$padj < 0.05 & abs(res_df$log2FoldChange) > 1)
+dar <- res_df[dar_idx, ]
+write.csv(dar, "results/atac_seq/pairwise_cmp_vs_ery/DARs_consensus.csv", row.names = FALSE)
+
+# =========================
+# VALIDATION SECTION
+# =========================
+
+# ---- 1. Replicate correlation ----
+log_counts <- log2(count_mat + 1)
+
+pdf("results/atac_seq/pairwise_cmp_vs_ery/replicate_correlation.pdf")
+plot(log_counts[,1], log_counts[,2], main="CMP replicates")
+plot(log_counts[,3], log_counts[,4], main="Erythroblast replicates")
+dev.off()
+
+cor_cmp <- cor(log_counts[,1], log_counts[,2])
+cor_ery <- cor(log_counts[,3], log_counts[,4])
+print(cor_cmp)
+print(cor_ery)
+
+# ---- 2. PCA ----
+vsd <- vst(dds, blind=TRUE)
+
+pdf("results/atac_seq/pairwise_cmp_vs_ery/PCA_plot.pdf")
+print(plotPCA(vsd, intgroup="condition"))
+dev.off()
+
+# ---- 3. p-value distribution ----
+pdf("results/atac_seq/pairwise_cmp_vs_ery/pvalue_hist.pdf")
+hist(res$pvalue, breaks=50, main="P-value distribution")
+dev.off()
+
+# ---- 4. Volcano plot ----
+res_df$significant <- res_df$padj < 0.05 & abs(res_df$log2FoldChange) > 1
+
+res_df_clean <- res_df[!is.na(res_df$padj), ]
+
+p <- ggplot(res_df_clean, aes(x=log2FoldChange, y=-log10(padj), color=significant)) +
+  geom_point(size=1) +
+  theme_minimal()
+
+print(p)  # shows in R
+
+ggsave("results/atac_seq/pairwise_cmp_vs_ery/volcano_plot.pdf", plot = p, width = 6, height = 5)
+
+
+# ---- 5. Peak annotation on DARs only ----
+if (length(dar_idx) > 0) {
+  dar_peaks <- all_peaks[dar_idx]
+  peakAnno_dar <- annotatePeak(
+    dar_peaks,
+    TxDb = TxDb.Mmusculus.UCSC.mm10.knownGene
+  )
+  dar_anno_df <- as.data.frame(peakAnno_dar)
+  dar_anno_df$log2FoldChange <- dar$log2FoldChange
+  dar_anno_df$padj <- dar$padj
+  write.csv(dar_anno_df, "results/atac_seq/pairwise_cmp_vs_ery/DARs_annotated.csv", row.names = FALSE)
+
+  pdf("results/atac_seq/pairwise_cmp_vs_ery/peak_annotation_pie.pdf")
+  plotAnnoPie(peakAnno_dar)
+  dev.off()
+
+  # ---- 6. GO enrichment for genes near DARs ----
+  genes <- unique(dar_anno_df$geneId)
+  genes <- genes[!is.na(genes)]
+
+  if (length(genes) > 0) {
+    ego <- enrichGO(
+      gene = genes,
+      OrgDb = org.Mm.eg.db,
+      keyType = "ENTREZID",
+      ont = "BP"
+    )
+    write.csv(as.data.frame(ego), "results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment.csv", row.names = FALSE)
+  } else {
+    write.csv(data.frame(), "results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment.csv", row.names = FALSE)
+  }
+} else {
+  write.csv(data.frame(), "results/atac_seq/pairwise_cmp_vs_ery/DARs_annotated.csv", row.names = FALSE)
+  write.csv(data.frame(), "results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment.csv", row.names = FALSE)
+}
+
+# =========================
+# DONE
+# =========================

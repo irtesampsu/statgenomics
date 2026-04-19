@@ -1,0 +1,26 @@
+{
+    "id": "1F2D8CE5",
+    "path": "~/Courses/STAT 555/statgenomics-project/scripts/atac_seq/q8_atac_clustering_all_cells.R",
+    "project_path": "scripts/atac_seq/q8_atac_clustering_all_cells.R",
+    "type": "r_source",
+    "hash": "2957708131",
+    "contents": "",
+    "dirty": false,
+    "created": 1776359012043.0,
+    "source_on_save": false,
+    "relative_order": 11,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "13,35",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1776359115,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1776359115,
+    "read_only": false,
+    "read_only_alternatives": []
+}
