@@ -3,4 +3,4 @@
 *.Rhistory
 *.md
 project_description.txt
-
+.DS_Store
