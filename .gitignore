@@ -6,4 +6,4 @@ project_description.txt
 *.DS_Store
 .Rproj.user
 data/
-"statgenomics - kehinde/"
+*kehinde*
