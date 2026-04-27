@@ -1,7 +1,7 @@
 *.Rproj*
 *.RData
 *.Rhistory
-*.md
+# .md
 project_description.txt
 *.DS_Store
 .Rproj.user
