@@ -1,0 +1,19 @@
+ATAC stringent post-processing summary
+=====================================
+
+Base file: results/atac_seq/pairwise_cmp_vs_ery/DARs_annotated.csv
+Stringent filter definition: padj < 0.01, |log2FC| >= 2, non-distal annotation
+Total DAR rows (annotated): 93160
+Stringent DAR rows: 55523
+Stringent DARs more open in Erythroblast: 6772
+Stringent DARs more open in CMP: 48751
+Unique stringent genes (open in Ery): 3893
+Unique stringent genes (open in CMP): 13248
+
+Outputs generated:
+- results/atac_seq/pairwise_cmp_vs_ery/DARs_stringent.csv
+- results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment_stringent_open_in_ery.csv
+- results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment_stringent_open_in_cmp.csv
+
+Interpretation note:
+These outputs improve specificity for reporting, but ATAC significance remains exploratory under bigBed score-based quantification.

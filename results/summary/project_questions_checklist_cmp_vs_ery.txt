@@ -1,0 +1,48 @@
+Project Questions Checklist: CMP vs Erythroblast
+===============================================
+
+Q1. What genes are differentially expressed across this cell-line pair?
+Status: COMPLETE
+Evidence files: results/deseq2/de_genes_deseq2.csv; results/limma_voom/de_genes_limma_voom.csv; results/summary/rna_report_summary.txt
+Conclusion: Strong differential expression is detected by both methods (DESeq2: 4799; limma-voom: 5057 at adjusted p-value < 0.05 and |logFC| > 1), indicating a robust transcriptional shift between CMP and Erythroblast.
+
+Q2. What are the functions of genes with differential expression?
+Status: COMPLETE
+Evidence files: results/deseq2/go_enrichment_deseq2.csv; results/limma_voom/go_enrichment_limma_voom.csv; results/summary/rna_report_summary.txt
+Conclusion: RNA GO enrichment highlights erythrocyte differentiation/homeostasis and biosynthetic/ribosome programs, consistent with erythroid maturation biology.
+
+Q3. How consistent are DESeq2 and limma-voom results?
+Status: COMPLETE
+Evidence files: results/summary/shared_de_genes_comparison.csv; results/summary/rna_report_summary.txt
+Conclusion: Methods are highly consistent for this pair (4209 shared DE genes; 100% direction agreement), supporting stable RNA-level conclusions.
+
+Q4. What is the RNA-seq sample relationship from clustering/tree analysis?
+Status: COMPLETE (pairwise + all-cell context)
+Evidence files: results/deseq2/pca_deseq2.pdf; results/deseq2/hclust_deseq2.pdf; results/limma_voom/pca_limma_voom.pdf; results/clustering/q4_rna_all_cells/sample_hclust.pdf
+Conclusion: Replicates cluster by condition, and CMP separates from Erythroblast while all-cell RNA relationships preserve expected lineage structure.
+
+Q5. What regions show differential chromatin accessibility, and what genes are nearby?
+Status: COMPLETE (exploratory ATAC mode)
+Evidence files: results/atac_seq/pairwise_cmp_vs_ery/DARs_consensus.csv; results/atac_seq/pairwise_cmp_vs_ery/DARs_annotated.csv; results/atac_seq/pairwise_cmp_vs_ery/README.txt
+Conclusion: Differentially accessible regions were identified and annotated to nearby genes, but current inferential strength is limited by bigBed score-derived quantification.
+
+Q6. How are differential chromatin patterns related to nearby gene expression?
+Status: COMPLETE (exploratory integration mode)
+Evidence files: results/integration/pairwise_cmp_vs_ery/integrated_shared_all.csv; results/integration/pairwise_cmp_vs_ery/integration_summary.txt
+Conclusion: Direction-concordant overlap exists (up/open in Ery: 629 genes; up/open in CMP: 1043 genes), supporting regulatory linkage hypotheses while remaining exploratory under current ATAC quantification.
+
+Q7. What are the functions of genes near differential chromatin regions?
+Status: COMPLETE (needs cautious interpretation)
+Evidence files: results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment.csv; results/atac_seq/pairwise_cmp_vs_ery/README.txt
+Conclusion: ATAC-linked GO terms are broad and include non-hematopoietic themes; report these as exploratory and emphasize directional and stringent subsets.
+
+Q8. What does the ATAC hierarchical tree show, and is it similar to RNA?
+Status: COMPLETE (comparison included, interpretation cautious)
+Evidence files: results/clustering/q8_atac_all_cells/sample_hclust.pdf; results/clustering/q4_rna_all_cells/sample_hclust.pdf; results/clustering/q8_atac_all_cells/README.txt
+Conclusion: ATAC clustering captures broad sample structure but should be interpreted with lower confidence than RNA until BAM-count-based accessibility testing is available.
+
+Overall readiness for this pair
+-------------------------------
+- All 8 required questions have file-backed outputs.
+- Strongest claims are RNA and RNA-method concordance.
+- ATAC and RNA-ATAC integration are reportable as exploratory with explicit method limitations.

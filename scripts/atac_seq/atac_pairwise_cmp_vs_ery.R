@@ -15,52 +15,24 @@ suppressPackageStartupMessages({
   library(org.Mm.eg.db)
 })
 
+source("scripts/utils/atac_utils.R")
+
 dir.create("results/atac_seq/pairwise_cmp_vs_ery", recursive = TRUE, showWarnings = FALSE)
 
 # ---- input ----
-files <- list(
-  CMP = c("data/atac_seq/CMP_rep1_ENCFF832UUS.bigBed", "data/atac_seq/CMP_rep2_ENCFF343PTQ.bigBed"),
-  Erythroblast = c("data/atac_seq/Erythroblast_rep1_ENCFF181AMY.bigBed", "data/atac_seq/Erythroblast_rep2_ENCFF616EWK.bigBed")
-)
+sample_info <- get_pairwise_atac("CMP", "Erythroblast")
 
 # ---- import peaks ----
-gr_list <- lapply(files, function(reps) {
-  lapply(reps, function(f) {
-    gr <- import(f, format = "bigBed")
-    seqlevelsStyle(gr) <- "UCSC"
-    return(gr)
-  })
-})
+gr_list <- import_bigbed_replicates(sample_info)
 
-# ---- replicate consensus per condition ----
-consensus_per_condition <- lapply(gr_list, function(reps) {
-  reduce(intersect(reps[[1]], reps[[2]]))
-})
-
-# ---- global consensus ----
-all_peaks <- Reduce(c, consensus_per_condition)
-all_peaks <- reduce(all_peaks)
-
-# ---- build count matrix ----
-get_signal <- function(gr, consensus) {
-  hits <- findOverlaps(consensus, gr)
-  signal <- numeric(length(consensus))
-  
-  if ("score" %in% colnames(mcols(gr))) {
-    signal[queryHits(hits)] <- signal[queryHits(hits)] +
-      mcols(gr)$score[subjectHits(hits)]
-  } else {
-    signal[queryHits(hits)] <- signal[queryHits(hits)] + 1
-  }
-  return(signal)
-}
-
-all_samples <- do.call(c, gr_list)
-count_mat <- sapply(all_samples, get_signal, consensus = all_peaks)
-count_mat <- as.matrix(count_mat)
-
-colnames(count_mat) <- c("CMP_rep1","CMP_rep2","Erythroblast_rep1","Erythroblast_rep2")
-condition <- factor(c("CMP","CMP","Erythroblast","Erythroblast"))
+# ---- condition-level peak sets ----
+# Use union of replicate peaks per condition; strict interval intersection can
+# be overly conservative when replicate peak boundaries are slightly shifted.
+all_peaks <- build_union_consensus_peaks(gr_list)
+atac_quant <- build_atac_count_matrix(sample_info, consensus = all_peaks)
+count_mat <- atac_quant$count_mat
+quant_method <- atac_quant$quant_method
+condition <- factor(sample_info$condition, levels = c("CMP", "Erythroblast"))
 
 # ---- DESeq2 ----
 dds <- DESeqDataSetFromMatrix(
@@ -82,6 +54,33 @@ res_df$end   <- end(all_peaks)
 dar_idx <- which(!is.na(res_df$padj) & res_df$padj < 0.05 & abs(res_df$log2FoldChange) > 1)
 dar <- res_df[dar_idx, ]
 write.csv(dar, "results/atac_seq/pairwise_cmp_vs_ery/DARs_consensus.csv", row.names = FALSE)
+writeLines(
+  c(
+    "ATAC pairwise analysis notes",
+    if (quant_method == "bam_counts") {
+      "Inputs: processed bigBed peaks for consensus definition plus BAM files for read counting"
+    } else {
+      "Inputs: processed bigBed peak files only"
+    },
+    "Consensus strategy: union of replicate peaks per condition, then union across conditions",
+    if (quant_method == "bam_counts") {
+      "Quantification: BAM read counts per consensus peak using summarizeOverlaps"
+    } else {
+      "Quantification: summed bigBed peak scores over overlaps per consensus peak"
+    },
+    if (quant_method == "bam_counts") {
+      "Interpretation: BAM-based peak counts are preferred and should be more defensible than bigBed score-derived pseudo-counts."
+    } else {
+      "Limitation: DESeq2 is being applied to score-derived pseudo-counts, not BAM-derived read counts."
+    },
+    if (quant_method == "bam_counts") {
+      "BAM mode is active because all expected ATAC BAM files for this comparison were found."
+    } else {
+      "Interpretation: treat differential accessibility statistics as approximate unless BAM-based counting is added."
+    }
+  ),
+  "results/atac_seq/pairwise_cmp_vs_ery/README.txt"
+)
 
 # =========================
 # VALIDATION SECTION

@@ -1,0 +1,5 @@
+RNA pairwise analysis inputs
+Assay: ScriptSeq only
+Samples: CMP_rep1, CMP_rep2, Erythroblast_rep1, Erythroblast_rep2
+Genes tested after filtering: 14072
+Significant DE genes: 5057

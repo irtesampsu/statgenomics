@@ -1,0 +1,15 @@
+section,metric,value,interpretation,evidence_file
+RNA DE,DESeq2 significant DE genes,4799,"Large expression shift between CMP and Erythroblast.",results/deseq2/de_genes_deseq2.csv
+RNA DE,limma-voom significant DE genes,5057,"Independent method confirms strong differential signal.",results/limma_voom/de_genes_limma_voom.csv
+RNA concordance,Shared DE genes (DESeq2 ∩ limma),4209,"High overlap indicates robust gene-level findings.",results/summary/shared_de_genes_comparison.csv
+RNA concordance,Direction agreement among shared DE genes,100.0%,"No sign conflict for shared hits; conclusions are stable across methods.",results/summary/shared_de_genes_comparison.csv
+RNA function,Top shared biological themes,"erythrocyte homeostasis; erythrocyte differentiation; myeloid homeostasis; ribosome/rRNA processes","Themes match expected erythroid differentiation and biosynthetic demand.",results/summary/rna_report_summary.txt
+ATAC DA,Total annotated DAR rows,93160,"Accessibility differences are broad under current score-based quantification.",results/atac_seq/pairwise_cmp_vs_ery/DARs_annotated.csv
+ATAC DA,Stringent DAR rows (padj < 0.01, |log2FC| >= 2, proximal),55523,"Stringent filter reduces noise and supports more conservative interpretation.",results/atac_seq/pairwise_cmp_vs_ery/DARs_stringent.csv
+ATAC direction,Stringent DARs open in Erythroblast,6772,"Subset used for direction-aware biological interpretation.",results/atac_seq/pairwise_cmp_vs_ery/stringent_analysis_notes.txt
+ATAC direction,Stringent DARs open in CMP,48751,"CMP-open signal dominates in current accessibility output.",results/atac_seq/pairwise_cmp_vs_ery/stringent_analysis_notes.txt
+ATAC function,Top GO (stringent open in Erythroblast),"erythrocyte differentiation; erythrocyte homeostasis; myeloid cell homeostasis","Directional enrichment in Ery-open subset aligns with hematopoietic biology.",results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment_stringent_open_in_ery.csv
+ATAC function,Top GO (stringent open in CMP),"chemotaxis; axonogenesis; regulation of synapse organization","Mixed themes suggest caution and possible annotation/quantification artifacts.",results/atac_seq/pairwise_cmp_vs_ery/GO_enrichment_stringent_open_in_cmp.csv
+RNA-ATAC integration,Integrated genes up/open in Erythroblast,629,"Direction-matched overlap supports regulatory linkage for a subset of genes.",results/integration/pairwise_cmp_vs_ery/integrated_shared_up_in_ery.csv
+RNA-ATAC integration,Integrated genes up/open in CMP,1043,"Substantial concordant overlap suggests accessibility-expression coupling.",results/integration/pairwise_cmp_vs_ery/integrated_shared_up_in_cmp.csv
+Method caveat,ATAC quantification mode,bigBed_score_fallback,"Treat ATAC p-values and integration as exploratory until BAM-count workflow is used.",results/integration/pairwise_cmp_vs_ery/integration_summary.txt

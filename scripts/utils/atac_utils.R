@@ -1,0 +1,112 @@
+source("scripts/utils/project_metadata.R")
+
+has_complete_atac_bams <- function(sample_info) {
+  all(file.exists(sample_info$bam_file))
+}
+
+import_bigbed_replicates <- function(sample_info) {
+  files_by_condition <- split(sample_info$file, sample_info$condition)
+  lapply(files_by_condition, function(reps) {
+    lapply(reps, function(f) {
+      gr <- rtracklayer::import(f, format = "bigBed")
+      GenomeInfoDb::seqlevelsStyle(gr) <- "UCSC"
+      gr
+    })
+  })
+}
+
+build_union_consensus_peaks <- function(gr_list) {
+  consensus_per_condition <- lapply(gr_list, function(reps) {
+    reduce(do.call(c, reps))
+  })
+  all_peaks <- Reduce(c, consensus_per_condition)
+  reduce(all_peaks)
+}
+
+get_bigbed_signal <- function(gr, consensus) {
+  hits <- findOverlaps(consensus, gr)
+  signal <- numeric(length(consensus))
+
+  if ("score" %in% colnames(mcols(gr))) {
+    score_sums <- rowsum(
+      x = mcols(gr)$score[subjectHits(hits)],
+      group = queryHits(hits),
+      reorder = FALSE
+    )
+    signal[as.integer(rownames(score_sums))] <- as.numeric(score_sums[, 1])
+  } else {
+    warning("BigBed file does not contain score column, using 1 for all overlaps")
+    signal[unique(queryHits(hits))] <- 1
+  }
+
+  signal
+}
+
+build_atac_score_matrix <- function(gr_list, consensus, sample_names) {
+  all_samples <- do.call(c, gr_list)
+  score_mat <- sapply(all_samples, get_bigbed_signal, consensus = consensus)
+  score_mat <- round(as.matrix(score_mat))
+  colnames(score_mat) <- sample_names
+  score_mat
+}
+
+ensure_bam_indexes <- function(bam_files) {
+  if (!requireNamespace("Rsamtools", quietly = TRUE)) {
+    stop("Package 'Rsamtools' is required for BAM-based ATAC counting.")
+  }
+
+  for (bam in bam_files) {
+    bai <- paste0(bam, ".bai")
+    alt_bai <- sub("\\.bam$", ".bai", bam)
+    if (!file.exists(bai) && !file.exists(alt_bai)) {
+      Rsamtools::indexBam(bam)
+    }
+  }
+}
+
+build_atac_bam_count_matrix <- function(sample_info, consensus) {
+  if (!requireNamespace("GenomicAlignments", quietly = TRUE)) {
+    stop("Package 'GenomicAlignments' is required for BAM-based ATAC counting.")
+  }
+  if (!requireNamespace("Rsamtools", quietly = TRUE)) {
+    stop("Package 'Rsamtools' is required for BAM-based ATAC counting.")
+  }
+  if (!requireNamespace("SummarizedExperiment", quietly = TRUE)) {
+    stop("Package 'SummarizedExperiment' is required for BAM-based ATAC counting.")
+  }
+
+  bam_files <- sample_info$bam_file
+  ensure_bam_indexes(bam_files)
+
+  bam_reads <- Rsamtools::BamFileList(bam_files, yieldSize = 1000000)
+  se <- GenomicAlignments::summarizeOverlaps(
+    features = consensus,
+    reads = bam_reads,
+    mode = "Union",
+    singleEnd = FALSE,
+    ignore.strand = TRUE,
+    fragments = TRUE
+  )
+
+  count_mat <- SummarizedExperiment::assay(se)
+  count_mat <- round(as.matrix(count_mat))
+  colnames(count_mat) <- sample_info$sample
+  count_mat
+}
+
+build_atac_count_matrix <- function(sample_info, consensus) {
+  gr_list <- import_bigbed_replicates(sample_info)
+  if (has_complete_atac_bams(sample_info)) {
+    list(
+      count_mat = build_atac_bam_count_matrix(sample_info, consensus),
+      quant_method = "bam_counts",
+      gr_list = gr_list
+    )
+  } else {
+    list(
+      count_mat = build_atac_score_matrix(gr_list, consensus = consensus, sample_names = sample_info$sample),
+      quant_method = "bigBed_score_fallback",
+      gr_list = gr_list
+    )
+  }
+}

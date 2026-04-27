@@ -6,63 +6,19 @@ suppressPackageStartupMessages({
   library(pheatmap)
 })
 
+source("scripts/utils/atac_utils.R")
+
 dir.create("results/clustering/q8_atac_all_cells", recursive = TRUE, showWarnings = FALSE)
 
-files <- list(
-  HSC = c("data/atac_seq/HSC_rep1_ENCFF662DYG.bigBed", "data/atac_seq/HSC_rep2_ENCFF255IVU.bigBed"),
-  CMP = c("data/atac_seq/CMP_rep1_ENCFF832UUS.bigBed", "data/atac_seq/CMP_rep2_ENCFF343PTQ.bigBed"),
-  CFUE = c("data/atac_seq/CFUE_rep1_ENCFF796ZSB.bigBed", "data/atac_seq/CFUE_rep2_ENCFF599ZDJ.bigBed"),
-  Erythroblast = c("data/atac_seq/Erythroblast_rep1_ENCFF181AMY.bigBed", "data/atac_seq/Erythroblast_rep2_ENCFF616EWK.bigBed")
-)
-
-missing_files <- unlist(files)[!file.exists(unlist(files))]
-if (length(missing_files) > 0) {
-  stop(
-    paste(
-      "Q8 ATAC clustering is missing required bigBed files:",
-      paste(missing_files, collapse = ", ")
-    )
-  )
-}
-
-gr_list <- lapply(files, function(reps) {
-  lapply(reps, function(f) {
-    gr <- import(f, format = "bigBed")
-    seqlevelsStyle(gr) <- "UCSC"
-    gr
-  })
-})
-
-consensus_per_condition <- lapply(gr_list, function(reps) {
-  reduce(intersect(reps[[1]], reps[[2]]))
-})
-
-all_peaks <- Reduce(c, consensus_per_condition)
-all_peaks <- reduce(all_peaks)
-
-get_signal <- function(gr, consensus) {
-  hits <- findOverlaps(consensus, gr)
-  signal <- numeric(length(consensus))
-  if ("score" %in% colnames(mcols(gr))) {
-    signal[queryHits(hits)] <- signal[queryHits(hits)] + mcols(gr)$score[subjectHits(hits)]
-  } else {
-    signal[queryHits(hits)] <- signal[queryHits(hits)] + 1
-  }
-  signal
-}
-
-all_samples <- do.call(c, gr_list)
-count_mat <- sapply(all_samples, get_signal, consensus = all_peaks)
-count_mat <- round(as.matrix(count_mat))
-colnames(count_mat) <- c(
-  "HSC_rep1", "HSC_rep2",
-  "CMP_rep1", "CMP_rep2",
-  "CFUE_rep1", "CFUE_rep2",
-  "Erythroblast_rep1", "Erythroblast_rep2"
-)
+sample_info <- get_all_atac()
+gr_list <- import_bigbed_replicates(sample_info)
+all_peaks <- build_union_consensus_peaks(gr_list)
+atac_quant <- build_atac_count_matrix(sample_info, consensus = all_peaks)
+count_mat <- atac_quant$count_mat
+quant_method <- atac_quant$quant_method
 
 condition <- factor(
-  c("HSC", "HSC", "CMP", "CMP", "CFUE", "CFUE", "Erythroblast", "Erythroblast"),
+  sample_info$condition,
   levels = c("HSC", "CMP", "CFUE", "Erythroblast")
 )
 
@@ -116,6 +72,13 @@ dev.off()
 
 cluster_summary <- c(
   "Question 8 guidance",
+  "Inputs were validated against the ATAC sample manifest before analysis.",
+  "Consensus strategy now matches the pairwise ATAC script: union of replicate peaks per condition, then union across conditions.",
+  if (quant_method == "bam_counts") {
+    "Quantification uses BAM read counts per consensus peak, which is preferred for clustering and downstream differential analysis."
+  } else {
+    "Signal values come from summed bigBed peak scores over overlaps, so this clustering is exploratory rather than a substitute for BAM-based peak counting."
+  },
   "Use sample_hclust.pdf and sample_pca.pdf to describe how chromatin accessibility organizes the four cell types.",
   "Use top_variable_peaks_heatmap.pdf to describe accessibility clusters that are cell-type-specific.",
   "Then compare the overall tree structure to the RNA tree from Q4. Similar broad ordering supports coordinated regulatory and transcriptional differentiation."

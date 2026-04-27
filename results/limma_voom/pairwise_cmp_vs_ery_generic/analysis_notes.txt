@@ -1,0 +1,12 @@
+Pairwise RNA generic run notes
+==============================
+Cell A: CMP
+Cell B: Erythroblast
+Method: limma_voom
+Output directory: results/limma_voom/pairwise_cmp_vs_ery_generic
+Samples used: CMP_rep1, CMP_rep2, Erythroblast_rep1, Erythroblast_rep2
+Genes tested after filtering: 14337
+Filter: min_count >= 10 in at least 2 samples
+
+This script is for rapid expansion to additional assigned pairs.
+Use limma_voom by default based on first-pair method comparison unless a rerun decision changes.

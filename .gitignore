@@ -3,4 +3,7 @@
 *.Rhistory
 *.md
 project_description.txt
-.DS_Store
+*.DS_Store
+.Rproj.user
+data/
+statgenomics - kehinde/

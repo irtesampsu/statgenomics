@@ -1,0 +1,54 @@
+CMP vs Erythroblast: Motivation -> Methods -> Results -> Why
+=============================================================
+
+Motivation
+----------
+Hematopoietic differentiation is expected to involve coordinated shifts in transcript abundance and chromatin accessibility.
+Comparing CMP (progenitor-like) versus Erythroblast (more differentiated erythroid state) tests whether erythroid programs are activated and whether nearby chromatin changes support that activation.
+
+Methods
+-------
+RNA-seq:
+- ScriptSeq-only samples with two biological replicates per condition.
+- Differential expression run with both DESeq2 and limma-voom on the first pair, as required.
+- GO enrichment on DE genes and structure checks using PCA, sample correlation, hierarchical clustering, and heatmaps.
+
+ATAC-seq:
+- Pairwise differential accessibility from processed bigBed peaks with consensus peak strategy.
+- DAR annotation to nearby genes and GO enrichment.
+- Stringent post-processing added for reporting focus: padj < 0.01, |log2FC| >= 2, non-distal annotations, and directional GO.
+
+RNA-ATAC Integration:
+- Intersect genes that are significant in both RNA methods with ATAC-linked genes.
+- Keep direction-concordant genes (up + open in same cell type) as strongest regulatory candidates.
+
+Results
+-------
+RNA is robust:
+- DESeq2: 4799 DE genes; limma-voom: 5057 DE genes.
+- Shared DE genes: 4209, with 100.0% direction agreement.
+- Functional themes include erythrocyte differentiation/homeostasis and ribosome/rRNA programs.
+- Sample-level plots show replicate coherence and clear separation by cell-line group.
+
+ATAC is broad but still informative:
+- 93,160 annotated DAR rows in baseline output; 55,523 in stringent subset.
+- Directional stringent GO shows erythroid-consistent terms for Ery-open subset.
+- CMP-open subset includes broader and less specific terms, which should be interpreted conservatively.
+
+Integration now complete:
+- 629 genes are up in Erythroblast and more open in Erythroblast.
+- 1043 genes are up in CMP and more open in CMP.
+- These represent direction-concordant multi-omic candidates for mechanistic interpretation.
+
+Why this is happening
+---------------------
+The data support a differentiation model where erythroblast maturation requires transcriptional activation of erythroid and high-biosynthesis programs.
+Concordant RNA+ATAC genes suggest chromatin accessibility changes are part of the regulatory mechanism enabling those expression shifts.
+At the same time, ATAC in this run uses bigBed score fallback rather than BAM-derived counts, so accessibility significance should be framed as exploratory rather than definitive.
+
+Figure-by-figure interpretation guide (for slides/report text)
+--------------------------------------------------------------
+- PCA: Separation by cell-line group indicates strong biological differences; tight replicate grouping indicates acceptable technical consistency.
+- Correlation heatmap: Within-group replicate correlations exceed between-group correlations, supporting biological signal over noise.
+- Volcano plots: Large-magnitude fold changes in both directions indicate coordinated lineage transition rather than isolated markers.
+- Top-feature heatmaps: Expression/accessibility patterns show block structure by cell-line group, visually reinforcing pairwise differentiation.

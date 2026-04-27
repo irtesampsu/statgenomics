@@ -7,43 +7,13 @@ suppressPackageStartupMessages({
   library(org.Mm.eg.db)
 })
 
+source("scripts/utils/rna_utils.R")
+
 dir.create("results/deseq2", recursive = TRUE, showWarnings = FALSE)
 
-sample_info <- data.frame(
-  sample = c("CMP_rep1", "CMP_rep2", "Erythroblast_rep1", "Erythroblast_rep2"),
-  condition = c("CMP", "CMP", "Erythroblast", "Erythroblast"),
-  file = c(
-    "data/rna_seq/CMP_rep1_ENCFF623OLU.tsv",
-    "data/rna_seq/CMP_rep2_ENCFF691MHW.tsv",
-    "data/rna_seq/Erythroblast_rep1_ENCFF342WUL.tsv",
-    "data/rna_seq/Erythroblast_rep2_ENCFF858JHF.tsv"
-  ),
-  stringsAsFactors = FALSE
-)
-
-read_expected_counts <- function(file_path, sample_name) {
-  x <- read.delim(file_path, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-  x <- x[, c("gene_id", "expected_count")]
-  colnames(x)[2] <- sample_name
-  x
-}
-
-count_tables <- mapply(
-  read_expected_counts,
-  sample_info$file,
-  sample_info$sample,
-  SIMPLIFY = FALSE
-)
-
-count_df <- Reduce(function(x, y) merge(x, y, by = "gene_id", all = TRUE), count_tables)
-count_df[is.na(count_df)] <- 0
-
-counts <- as.matrix(count_df[, -1])
-rownames(counts) <- count_df$gene_id
-storage.mode(counts) <- "integer"
-
-keep <- rowSums(counts >= 10) >= 2
-counts <- counts[keep, ]
+sample_info <- get_pairwise_rna_scriptseq("CMP", "Erythroblast")
+counts <- build_rna_count_matrix(sample_info)
+counts <- filter_rna_counts(counts, min_count = 10L, min_samples = 2L)
 
 sample_info$condition <- factor(sample_info$condition, levels = c("CMP", "Erythroblast"))
 
@@ -66,18 +36,8 @@ write.csv(res_df, "results/deseq2/all_genes_deseq2.csv", row.names = FALSE)
 deg_df <- subset(res_df, !is.na(padj) & padj < 0.05 & abs(log2FoldChange) > 1)
 write.csv(deg_df, "results/deseq2/de_genes_deseq2.csv", row.names = FALSE)
 
-sig_gene_ids <- unique(deg_df$gene_id)
-sig_gene_ids <- as.character(sig_gene_ids[!is.na(sig_gene_ids)])
-sig_gene_ids <- sub("\\..*$", "", sig_gene_ids)
-
-id_map <- bitr(
-  sig_gene_ids,
-  fromType = "ENSEMBL",
-  toType = "ENTREZID",
-  OrgDb = org.Mm.eg.db
-)
-
-sig_gene_ids <- unique(id_map$ENTREZID)
+sig_gene_ids <- map_ensembl_to_entrez(deg_df$gene_id, org.Mm.eg.db)
+bg_entrez_ids <- map_ensembl_to_entrez(rownames(counts), org.Mm.eg.db)
 
 if (length(sig_gene_ids) == 0) {
   stop("GO enrichment failed: no significant DE genes could be mapped from ENSEMBL IDs to mouse ENTREZID values.")
@@ -85,6 +45,7 @@ if (length(sig_gene_ids) == 0) {
 
 ego <- enrichGO(
   gene = sig_gene_ids,
+  universe = bg_entrez_ids,
   OrgDb = org.Mm.eg.db,
   keyType = "ENTREZID",
   ont = "BP",
@@ -96,6 +57,16 @@ if (is.null(ego) || nrow(as.data.frame(ego)) == 0) {
 }
 
 write.csv(as.data.frame(ego), "results/deseq2/go_enrichment_deseq2.csv", row.names = FALSE)
+writeLines(
+  c(
+    "RNA pairwise analysis inputs",
+    "Assay: ScriptSeq only",
+    paste("Samples:", paste(sample_info$sample, collapse = ", ")),
+    sprintf("Genes tested after filtering: %d", nrow(counts)),
+    sprintf("Significant DE genes: %d", nrow(deg_df))
+  ),
+  "results/deseq2/analysis_notes.txt"
+)
 
 vsd <- vst(dds, blind = TRUE)
 vsd_mat <- assay(vsd)
@@ -115,6 +86,16 @@ sample_dist <- dist(t(vsd_mat))
 pdf("results/deseq2/hclust_deseq2.pdf")
 plot(hclust(sample_dist), main = "Hierarchical Clustering of Samples")
 dev.off()
+
+plot_top_variable_genes_heatmap(
+  expr_mat = vsd_mat,
+  sample_conditions = sample_info$condition,
+  sample_names = sample_info$sample,
+  out_file = "results/deseq2/top1000_variable_genes_heatmap_deseq2.pdf",
+  title_text = "Top 1000 Variable Genes - Hierarchical Clustering\nCMP vs Erythroblast",
+  top_n = 1000L,
+  annotation_palette = c(CMP = "#67A9CF", Erythroblast = "#EF8A62")
+)
 
 top_n <- min(50, nrow(deg_df))
 if (top_n > 1) {

@@ -1,0 +1,40 @@
+Pairwise Analysis Summary Template
+=================================
+
+Pair:
+- Cell A:
+- Cell B:
+- Analysis date:
+
+Inputs and method
+-----------------
+- RNA assay used: ScriptSeq only
+- Replicates used: two per condition
+- RNA differential method:
+- ATAC quantification mode:
+- Thresholds:
+
+Core quantitative outputs
+-------------------------
+- RNA significant genes:
+- RNA top themes:
+- ATAC DAR count:
+- ATAC stringent DAR count:
+- Integration up/open in Cell B:
+- Integration up/open in Cell A:
+
+Interpretation
+--------------
+- Main biological shift:
+- Strongest supporting figures:
+- Key concordant genes:
+
+Limitations
+-----------
+- ATAC mode caveat:
+- Any QC caveat:
+
+Next action
+-----------
+- Ready for presentation: yes/no
+- Follow-up analysis needed:
