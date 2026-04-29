@@ -1,4 +1,0 @@
-Top-1000 variable gene heatmap (pairwise CMP vs Erythroblast)
-Samples: CMP_rep1, CMP_rep2, Erythroblast_rep1, Erythroblast_rep2
-Genes plotted: 1000
-Matrix: VST-transformed counts with per-gene z-score scaling

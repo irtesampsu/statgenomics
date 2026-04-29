@@ -8,18 +8,36 @@ suppressPackageStartupMessages({
 
 source("scripts/utils/atac_utils.R")
 
-dir.create("results/clustering/q8_atac_all_cells", recursive = TRUE, showWarnings = FALSE)
+args <- commandArgs(trailingOnly = TRUE)
+defaults <- list(
+  cells = "CMP,CFUE,Erythroblast",
+  out_dir = "results/clustering/q8_atac_all_cells",
+  dar_deseq2 = "results/atac_seq/pairwise_cmp_vs_ery/DARs_consensus_deseq2.csv",
+  dar_limma = "results/atac_seq/pairwise_cmp_vs_ery/DARs_consensus_limma_voom.csv",
+  top_n = "2000"
+)
+if (length(args) %% 2 != 0) stop("Arguments must be passed as --key value pairs.")
+if (length(args) > 0) {
+  keys <- sub("^--", "", args[seq(1, length(args), by = 2)])
+  vals <- args[seq(2, length(args), by = 2)]
+  for (i in seq_along(keys)) defaults[[keys[i]]] <- vals[i]
+}
 
+cells <- trimws(strsplit(as.character(defaults$cells), ",", fixed = TRUE)[[1]])
+out_dir <- as.character(defaults$out_dir)
+top_n <- as.integer(defaults$top_n)
+
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 sample_info <- get_all_atac()
+sample_info <- sample_info[sample_info$condition %in% cells, , drop = FALSE]
 gr_list <- import_bigbed_replicates(sample_info)
 all_peaks <- build_union_consensus_peaks(gr_list)
 atac_quant <- build_atac_count_matrix(sample_info, consensus = all_peaks)
 count_mat <- atac_quant$count_mat
-quant_method <- atac_quant$quant_method
 
 condition <- factor(
   sample_info$condition,
-  levels = c("HSC", "CMP", "CFUE", "Erythroblast")
+  levels = cells
 )
 
 dds <- DESeqDataSetFromMatrix(
@@ -28,59 +46,68 @@ dds <- DESeqDataSetFromMatrix(
   design = ~ condition
 )
 
+dds <- estimateSizeFactors(dds)
 vsd <- vst(dds, blind = TRUE)
-vsd_mat <- assay(vsd)
+vsd_mat_full <- assay(vsd)  # normalized log2-scale matrix
+peak_keys <- paste(as.character(seqnames(all_peaks)), start(all_peaks), end(all_peaks), sep = ":")
+rownames(vsd_mat_full) <- peak_keys
+
+read_results <- function(path) read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+select_top_peaks <- function(path, n) {
+  if (!file.exists(path)) return(character(0))
+  d <- read_results(path)
+  if (!all(c("chr", "start", "end", "log2FoldChange", "padj") %in% colnames(d))) return(character(0))
+  d <- d[!is.na(d$log2FoldChange) & !is.na(d$padj), , drop = FALSE]
+  d <- d[order(d$padj, -abs(d$log2FoldChange)), , drop = FALSE]
+  unique(head(paste(d$chr, d$start, d$end, sep = ":"), n))
+}
+selected_peaks <- unique(c(
+  select_top_peaks(as.character(defaults$dar_deseq2), top_n),
+  select_top_peaks(as.character(defaults$dar_limma), top_n)
+))
+vsd_mat <- vsd_mat_full[rownames(vsd_mat_full) %in% selected_peaks, , drop = FALSE]
+if (nrow(vsd_mat) == 0) stop("No overlapping top differential peaks found for clustering matrix.")
 
 sample_cor <- cor(vsd_mat)
-write.csv(sample_cor, "results/clustering/q8_atac_all_cells/sample_correlation.csv")
 
 annotation_df <- data.frame(condition = condition, row.names = colnames(count_mat))
 
-pdf("results/clustering/q8_atac_all_cells/sample_correlation_heatmap.pdf", width = 7, height = 6)
+pdf(file.path(out_dir, "sample_correlation_heatmap.pdf"), width = 7, height = 6)
 pheatmap(
   sample_cor,
   annotation_col = annotation_df,
   annotation_row = annotation_df,
-  main = "ATAC-seq Sample Correlation"
+  main = "ATAC Sample Correlation (top DAR peaks, log2 scale)"
 )
 dev.off()
 
-sample_dist <- dist(t(vsd_mat))
-hc <- hclust(sample_dist)
-
-pdf("results/clustering/q8_atac_all_cells/sample_hclust.pdf", width = 8, height = 6)
-plot(hc, main = "Q8 ATAC-seq Hierarchical Clustering")
+pdf(file.path(out_dir, "sample_pca.pdf"), width = 7, height = 6)
+pca_obj <- prcomp(t(vsd_mat), center = TRUE, scale. = FALSE)
+pca_df <- data.frame(
+  PC1 = pca_obj$x[, 1],
+  PC2 = pca_obj$x[, 2],
+  condition = condition,
+  sample = colnames(vsd_mat),
+  stringsAsFactors = FALSE
+)
+plot(
+  pca_df$PC1,
+  pca_df$PC2,
+  col = as.integer(pca_df$condition),
+  pch = 19,
+  xlab = "PC1",
+  ylab = "PC2",
+  main = "ATAC PCA (top DAR peaks, log2 scale)"
+)
+text(pca_df$PC1, pca_df$PC2, labels = pca_df$sample, pos = 3, cex = 0.7)
+legend("topright", legend = levels(condition), col = seq_along(levels(condition)), pch = 19, bty = "n")
 dev.off()
 
-pdf("results/clustering/q8_atac_all_cells/sample_pca.pdf", width = 7, height = 6)
-print(plotPCA(vsd, intgroup = "condition"))
-dev.off()
-
-peak_var <- apply(vsd_mat, 1, var)
-top_peak_ids <- order(peak_var, decreasing = TRUE)[seq_len(min(100, length(peak_var)))]
-top_peak_mat <- vsd_mat[top_peak_ids, , drop = FALSE]
-
-pdf("results/clustering/q8_atac_all_cells/top_variable_peaks_heatmap.pdf", width = 8, height = 10)
+pdf(file.path(out_dir, "top_differential_peaks_heatmap.pdf"), width = 8, height = 9)
 pheatmap(
-  top_peak_mat,
-  scale = "row",
-  show_rownames = FALSE,
+  t(scale(t(vsd_mat))),
   annotation_col = annotation_df,
-  main = "Top Variable ATAC Peaks"
+  show_rownames = FALSE,
+  main = "ATAC Heatmap (top DAR peaks, row-scaled log2 values)"
 )
 dev.off()
-
-cluster_summary <- c(
-  "Question 8 guidance",
-  "Inputs were validated against the ATAC sample manifest before analysis.",
-  "Consensus strategy now matches the pairwise ATAC script: union of replicate peaks per condition, then union across conditions.",
-  if (quant_method == "bam_counts") {
-    "Quantification uses BAM read counts per consensus peak, which is preferred for clustering and downstream differential analysis."
-  } else {
-    "Signal values come from summed bigBed peak scores over overlaps, so this clustering is exploratory rather than a substitute for BAM-based peak counting."
-  },
-  "Use sample_hclust.pdf and sample_pca.pdf to describe how chromatin accessibility organizes the four cell types.",
-  "Use top_variable_peaks_heatmap.pdf to describe accessibility clusters that are cell-type-specific.",
-  "Then compare the overall tree structure to the RNA tree from Q4. Similar broad ordering supports coordinated regulatory and transcriptional differentiation."
-)
-writeLines(cluster_summary, "results/clustering/q8_atac_all_cells/README.txt")

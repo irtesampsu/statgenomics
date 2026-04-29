@@ -1,259 +1,269 @@
 suppressPackageStartupMessages({
   library(AnnotationDbi)
-  library(org.Mm.eg.db)
+  library(clusterProfiler)
   library(ggplot2)
+  library(ggrepel)
+  library(grid)
+  library(limma)
+  library(org.Mm.eg.db)
+  library(scales)
+  library(stringr)
 })
 
-dir.create("results/summary", recursive = TRUE, showWarnings = FALSE)
-
-read_results <- function(path) {
-  read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+args <- commandArgs(trailingOnly = TRUE)
+defaults <- list(
+  deseq_path = "results/deseq2/de_genes_deseq2.csv",
+  limma_path = "results/limma_voom/de_genes_limma_voom.csv",
+  deseq_all_path = "results/deseq2/all_genes_deseq2.csv",
+  limma_all_path = "results/limma_voom/all_genes_limma_voom.csv",
+  deseq_go = "results/deseq2/go_enrichment_deseq2.csv",
+  limma_go = "results/limma_voom/go_enrichment_limma_voom.csv",
+  out_dir = "results/summary",
+  label = "RNA",
+  cell_a = "CMP",
+  cell_b = "Erythroblast"
+)
+if (length(args) %% 2 != 0) stop("Arguments must be passed as --key value pairs.")
+if (length(args) > 0) {
+  keys <- sub("^--", "", args[seq(1, length(args), by = 2)])
+  vals <- args[seq(2, length(args), by = 2)]
+  for (i in seq_along(keys)) defaults[[keys[i]]] <- vals[i]
 }
 
-clean_ensembl <- function(ids) {
-  sub("\\..*$", "", ids)
-}
+dir.create(as.character(defaults$out_dir), recursive = TRUE, showWarnings = FALSE)
+cell_a <- as.character(defaults$cell_a)
+cell_b <- as.character(defaults$cell_b)
 
-map_gene_symbols <- function(ids) {
-  ids <- clean_ensembl(ids)
+clean_ensembl <- function(ids) sub("\\..*$", "", ids)
+read_results <- function(path) read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+
+map_symbols <- function(ids) {
+  clean_ids <- clean_ensembl(ids)
   mapped <- suppressMessages(
     AnnotationDbi::mapIds(
       org.Mm.eg.db,
-      keys = ids,
+      keys = clean_ids,
       column = "SYMBOL",
       keytype = "ENSEMBL",
       multiVals = "first"
     )
   )
-  unname(mapped)
+  out <- unname(mapped)
+  ifelse(is.na(out) | !nzchar(out), clean_ids, out)
 }
 
-prepare_gene_table <- function(df, gene_col, fc_col, padj_col, method_name) {
-  out <- df[, c(gene_col, fc_col, padj_col)]
-  colnames(out) <- c("gene_id", "fold_change", "padj")
-  out$gene_symbol <- map_gene_symbols(out$gene_id)
-  out$gene_label <- ifelse(is.na(out$gene_symbol), clean_ensembl(out$gene_id), out$gene_symbol)
-  out$method <- method_name
-  out
-}
-
-top_genes_text <- function(df, direction = c("up", "down"), n = 10) {
-  direction <- match.arg(direction)
-  if (direction == "up") {
-    x <- df[df$fold_change > 0, ]
-    x <- x[order(-x$fold_change, x$padj), ]
-  } else {
-    x <- df[df$fold_change < 0, ]
-    x <- x[order(x$fold_change, x$padj), ]
-  }
-  x <- head(x, n)
-  if (nrow(x) == 0) {
-    return("None")
-  }
-  paste(sprintf("%s (%.2f)", x$gene_label, x$fold_change), collapse = ", ")
-}
-
-top_go_text <- function(df, n = 10) {
-  if (nrow(df) == 0) {
-    return("None")
-  }
-  x <- df[order(df$p.adjust, -df$Count), c("Description", "p.adjust", "Count")]
-  x <- head(x, n)
-  paste(sprintf("%s (FDR %.2e, n=%s)", x$Description, x$p.adjust, x$Count), collapse = "\n")
-}
-
-extract_themes <- function(go_df, n = 8) {
-  if (nrow(go_df) == 0) {
-    return(character(0))
-  }
-  head(go_df[order(go_df$p.adjust), "Description"], n)
-}
-
-safe_read_results <- function(path) {
-  if (!file.exists(path)) {
-    return(NULL)
-  }
-  read_results(path)
-}
-
-integration_line <- function(path, prefix) {
-  if (!file.exists(path)) {
-    return(paste(prefix, "Not generated yet."))
-  }
-  x <- readLines(path, warn = FALSE)
-  key <- x[grepl(prefix, x, fixed = TRUE)]
-  if (length(key) == 0) {
-    return(paste(prefix, "Not available."))
-  }
-  key[1]
-}
-
-deseq_de <- read_results("results/deseq2/de_genes_deseq2.csv")
-limma_de <- read_results("results/limma_voom/de_genes_limma_voom.csv")
-deseq_go <- read_results("results/deseq2/go_enrichment_deseq2.csv")
-limma_go <- read_results("results/limma_voom/go_enrichment_limma_voom.csv")
-integration_summary_path <- "results/integration/pairwise_cmp_vs_ery/integration_summary.txt"
-integration_summary <- if (file.exists(integration_summary_path)) readLines(integration_summary_path, warn = FALSE) else character(0)
-
-deseq_tbl <- prepare_gene_table(deseq_de, "gene_id", "log2FoldChange", "padj", "DESeq2")
-limma_tbl <- prepare_gene_table(limma_de, "gene_id", "logFC", "adj.P.Val", "limma-voom")
-
-deseq_tbl$gene_clean <- clean_ensembl(deseq_tbl$gene_id)
-limma_tbl$gene_clean <- clean_ensembl(limma_tbl$gene_id)
-
-deseq_ids <- unique(deseq_tbl$gene_clean)
-limma_ids <- unique(limma_tbl$gene_clean)
-shared_ids <- intersect(deseq_ids, limma_ids)
-
-comparison_df <- merge(
-  unique(deseq_tbl[, c("gene_clean", "gene_label", "fold_change", "padj")]),
-  unique(limma_tbl[, c("gene_clean", "gene_label", "fold_change", "padj")]),
-  by = "gene_clean",
-  suffixes = c("_deseq2", "_limma")
-)
-
-comparison_df$same_direction <- sign(comparison_df$fold_change_deseq2) == sign(comparison_df$fold_change_limma)
-direction_agreement <- if (nrow(comparison_df) > 0) {
-  mean(comparison_df$same_direction) * 100
-} else {
-  NA_real_
-}
-
-summary_lines <- c(
-  "RNA-seq Summary for CMP vs Erythroblast",
-  "=======================================",
-  "",
-  "Question 1. Differentially expressed genes",
-  sprintf("DESeq2 identified %d significant genes (padj < 0.05 and |log2FC| > 1).", nrow(deseq_tbl)),
-  sprintf("limma-voom identified %d significant genes (adj.P.Val < 0.05 and |logFC| > 1).", nrow(limma_tbl)),
-  sprintf("The two methods shared %d DE genes after matching Ensembl IDs without version suffixes.", length(shared_ids)),
-  "",
-  "Top genes higher in Erythroblast",
-  paste("DESeq2:", top_genes_text(deseq_tbl, "up")),
-  paste("limma-voom:", top_genes_text(limma_tbl, "up")),
-  "",
-  "Top genes higher in CMP",
-  paste("DESeq2:", top_genes_text(deseq_tbl, "down")),
-  paste("limma-voom:", top_genes_text(limma_tbl, "down")),
-  "",
-  "Question 2. Functional enrichment of DE genes",
-  "Top DESeq2 GO terms:",
-  top_go_text(deseq_go),
-  "",
-  "Top limma-voom GO terms:",
-  top_go_text(limma_go),
-  "",
-  "Question 3. Consistency between DESeq2 and limma-voom",
-  sprintf("Shared DE genes: %d", length(shared_ids)),
-  if (!is.na(direction_agreement)) sprintf("Direction agreement among shared DE genes: %.1f%%", direction_agreement) else "Direction agreement could not be calculated.",
-  paste("Top DESeq2 GO themes:", paste(extract_themes(deseq_go), collapse = "; ")),
-  paste("Top limma-voom GO themes:", paste(extract_themes(limma_go), collapse = "; ")),
-  "Interpretation: if the main biological themes are similar in both methods, the RNA-seq conclusions are robust even if gene rankings differ.",
-  "",
-  "Question 4. Sample relationships and clustering",
-  "Use the PCA plots, sample correlation heatmaps, hierarchical clustering trees, and top-gene heatmaps from each method.",
-  "Interpretation: replicates should cluster together, and CMP samples should separate from Erythroblast samples if the biology is strong and the data quality is good.",
-  "",
-  "Question 6. Relationship between differential chromatin and expression",
-  integration_line(integration_summary_path, "ATAC quantification mode:"),
-  integration_line(integration_summary_path, "Integrated genes up/open in Erythroblast:"),
-  integration_line(integration_summary_path, "Integrated genes up/open in CMP:"),
-  if (length(integration_summary) > 0) {
-    integration_summary[grepl("^Interpretation guidance$|^Integration results|^Genes appearing", integration_summary)]
-  } else {
-    "Integration summary has not been generated yet."
-  },
-  "",
-  "Suggested short report summary",
-  sprintf("Both DESeq2 and limma-voom detected strong transcriptional differences between CMP and Erythroblast, with %d and %d significant genes respectively.", nrow(deseq_tbl), nrow(limma_tbl)),
-  sprintf("The methods shared %d DE genes, and %.1f%% of shared genes had the same direction of change.", length(shared_ids), direction_agreement),
-  "GO enrichment from both methods highlighted erythrocyte differentiation, erythrocyte homeostasis, myeloid cell homeostasis, and ribosome/rRNA processing pathways.",
-  "These results are biologically consistent with erythroblast maturation and increased biosynthetic activity during differentiation.",
-  if (length(integration_summary) > 0) {
-    "RNA-ATAC integration files are available in results/integration/pairwise_cmp_vs_ery and should be used to support regulatory interpretation."
-  } else {
-    "RNA-ATAC integration has not been summarized yet."
-  }
-)
-
-writeLines(summary_lines, "results/summary/rna_report_summary.txt")
-
-shared_gene_table <- comparison_df[, c(
-  "gene_clean", "gene_label_deseq2", "fold_change_deseq2", "padj_deseq2",
-  "fold_change_limma", "padj_limma", "same_direction"
-)]
-colnames(shared_gene_table) <- c(
-  "gene_id", "gene_symbol", "log2FC_deseq2", "padj_deseq2",
-  "logFC_limma_voom", "padj_limma_voom", "same_direction"
-)
-write.csv(shared_gene_table, "results/summary/shared_de_genes_comparison.csv", row.names = FALSE)
-
-top_deseq2_up <- head(deseq_tbl[deseq_tbl$fold_change > 0, c("gene_id", "gene_label", "fold_change", "padj")][order(-deseq_tbl[deseq_tbl$fold_change > 0, "fold_change"]), ], 20)
-top_deseq2_down <- head(deseq_tbl[deseq_tbl$fold_change < 0, c("gene_id", "gene_label", "fold_change", "padj")][order(deseq_tbl[deseq_tbl$fold_change < 0, "fold_change"]), ], 20)
-top_limma_up <- head(limma_tbl[limma_tbl$fold_change > 0, c("gene_id", "gene_label", "fold_change", "padj")][order(-limma_tbl[limma_tbl$fold_change > 0, "fold_change"]), ], 20)
-top_limma_down <- head(limma_tbl[limma_tbl$fold_change < 0, c("gene_id", "gene_label", "fold_change", "padj")][order(limma_tbl[limma_tbl$fold_change < 0, "fold_change"]), ], 20)
-
-write.csv(top_deseq2_up, "results/summary/top20_erythroblast_up_deseq2.csv", row.names = FALSE)
-write.csv(top_deseq2_down, "results/summary/top20_cmp_up_deseq2.csv", row.names = FALSE)
-write.csv(top_limma_up, "results/summary/top20_erythroblast_up_limma_voom.csv", row.names = FALSE)
-write.csv(top_limma_down, "results/summary/top20_cmp_up_limma_voom.csv", row.names = FALSE)
-
-build_directional_top_genes <- function(df, method_name, top_n = 10) {
-  up_ery <- df[df$fold_change > 0, c("gene_label", "fold_change", "padj"), drop = FALSE]
-  up_ery <- up_ery[order(-up_ery$fold_change, up_ery$padj), , drop = FALSE]
-  up_ery <- head(up_ery, top_n)
-  up_ery$direction <- "Up in Erythroblast"
-
-  up_cmp <- df[df$fold_change < 0, c("gene_label", "fold_change", "padj"), drop = FALSE]
-  up_cmp <- up_cmp[order(up_cmp$fold_change, up_cmp$padj), , drop = FALSE]
-  up_cmp <- head(up_cmp, top_n)
-  up_cmp$fold_change <- abs(up_cmp$fold_change)
-  up_cmp$direction <- "Up in CMP"
-
-  out <- rbind(up_ery, up_cmp)
-  if (nrow(out) == 0) {
-    return(out)
-  }
-  out$method <- method_name
-  out$gene_label <- as.character(out$gene_label)
-  out
-}
-
-top_cmp_ery_deseq2 <- build_directional_top_genes(deseq_tbl, "DESeq2", top_n = 10)
-top_cmp_ery_limma <- build_directional_top_genes(limma_tbl, "limma-voom", top_n = 10)
-top_cmp_ery <- rbind(top_cmp_ery_deseq2, top_cmp_ery_limma)
-
-if (nrow(top_cmp_ery) > 0) {
-  top_cmp_ery$direction <- factor(top_cmp_ery$direction, levels = c("Up in CMP", "Up in Erythroblast"))
-  top_cmp_ery$method <- factor(top_cmp_ery$method, levels = c("DESeq2", "limma-voom"))
-  top_cmp_ery$gene_label <- factor(top_cmp_ery$gene_label, levels = rev(unique(top_cmp_ery$gene_label)))
-
-  write.csv(
-    top_cmp_ery,
-    "results/summary/top10_upregulated_cmp_vs_ery_comparison.csv",
-    row.names = FALSE
+prepare_method <- function(df, fc_col, padj_col, method_label) {
+  keep <- !is.na(df[[fc_col]]) & !is.na(df[[padj_col]])
+  out <- data.frame(
+    gene_id = clean_ensembl(df$gene_id[keep]),
+    log2fc = df[[fc_col]][keep],
+    padj = df[[padj_col]][keep],
+    method = method_label,
+    stringsAsFactors = FALSE
   )
+  out$gene <- map_symbols(out$gene_id)
+  out
+}
 
-  p <- ggplot(top_cmp_ery, aes(x = fold_change, y = gene_label, fill = direction)) +
-    geom_col(width = 0.8) +
+label_top_genes <- function(df, n = 10) {
+  sig <- df[df$padj < 0.05 & abs(df$log2fc) >= 1, , drop = FALSE]
+  up <- head(sig[sig$log2fc > 0, ][order(sig[sig$log2fc > 0, ]$padj), ], n)
+  down <- head(sig[sig$log2fc < 0, ][order(sig[sig$log2fc < 0, ]$padj), ], n)
+  rbind(up, down)
+}
+
+significant_genes <- function(df) {
+  unique(clean_ensembl(df$gene_id[!is.na(df$padj) & df$padj < 0.05 & abs(df$log2fc) > 1]))
+}
+
+map_ensembl_to_entrez <- function(ids) {
+  ids <- unique(clean_ensembl(as.character(ids)))
+  ids <- ids[!is.na(ids) & nzchar(ids)]
+  if (length(ids) == 0) return(character(0))
+  mapped <- suppressMessages(AnnotationDbi::mapIds(
+    org.Mm.eg.db,
+    keys = ids,
+    column = "ENTREZID",
+    keytype = "ENSEMBL",
+    multiVals = "first"
+  ))
+  unique(unname(mapped[!is.na(mapped)]))
+}
+
+parse_ratio <- function(x) {
+  vapply(strsplit(as.character(x), "/", fixed = TRUE), function(parts) {
+    as.numeric(parts[1]) / as.numeric(parts[2])
+  }, numeric(1))
+}
+
+simplified_go_from_rna <- function(all_df, fc_col, padj_col, method_label, cell_a_label, cell_b_label) {
+  sig <- all_df[!is.na(all_df[[padj_col]]) & all_df[[padj_col]] < 0.05 & abs(all_df[[fc_col]]) > 1, , drop = FALSE]
+  universe <- map_ensembl_to_entrez(all_df$gene_id)
+  run_dir <- function(gene_ids, direction_label) {
+    genes <- map_ensembl_to_entrez(gene_ids)
+    if (length(genes) < 10 || length(universe) < 10) return(data.frame())
+    ego <- enrichGO(
+      gene = genes,
+      universe = universe,
+      OrgDb = org.Mm.eg.db,
+      keyType = "ENTREZID",
+      ont = "BP",
+      pAdjustMethod = "BH"
+    )
+    if (is.null(ego) || nrow(as.data.frame(ego)) == 0) return(data.frame())
+    ego <- simplify(ego, cutoff = 0.7, by = "p.adjust", select_fun = min)
+    out <- as.data.frame(ego)
+    if (nrow(out) == 0) return(out)
+    out$method <- method_label
+    out$direction <- direction_label
+    out$gene_ratio <- parse_ratio(out$GeneRatio)
+    out$bg_ratio <- parse_ratio(out$BgRatio)
+    out$fold_enrichment <- out$gene_ratio / out$bg_ratio
+    out
+  }
+  up_b <- run_dir(sig$gene_id[sig[[fc_col]] > 0], paste("Up in", cell_b_label))
+  up_a <- run_dir(sig$gene_id[sig[[fc_col]] < 0], paste("Up in", cell_a_label))
+  rbind(up_a, up_b)
+}
+
+deseq <- read_results(as.character(defaults$deseq_path))
+limma_df <- read_results(as.character(defaults$limma_path))
+deseq_all <- read_results(as.character(defaults$deseq_all_path))
+limma_all <- read_results(as.character(defaults$limma_all_path))
+
+deseq_tbl <- prepare_method(deseq_all, "log2FoldChange", "padj", "DESeq2")
+limma_tbl <- prepare_method(limma_all, "logFC", "adj.P.Val", "limma-voom")
+volcano_tbl <- rbind(deseq_tbl, limma_tbl)
+volcano_tbl$significant <- volcano_tbl$padj < 0.05 & abs(volcano_tbl$log2fc) >= 1
+volcano_tbl$direction <- ifelse(
+  volcano_tbl$significant & volcano_tbl$log2fc > 0,
+  paste("Up in", cell_b),
+  ifelse(volcano_tbl$significant & volcano_tbl$log2fc < 0, paste("Up in", cell_a), "Not significant")
+)
+volcano_tbl$neg_log10_padj <- -log10(pmax(volcano_tbl$padj, 1e-300))
+top_tbl <- do.call(rbind, lapply(split(volcano_tbl, volcano_tbl$method), label_top_genes))
+if (nrow(top_tbl) > 0) {
+  top_tbl$direction <- ifelse(top_tbl$log2fc > 0, paste("Up in", cell_b), paste("Up in", cell_a))
+  top_tbl$neg_log10_padj <- -log10(pmax(top_tbl$padj, 1e-300))
+}
+
+p_volcano <- ggplot(volcano_tbl, aes(x = log2fc, y = neg_log10_padj, color = direction)) +
+  geom_point(alpha = 0.5, size = 0.8) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", linewidth = 0.35, color = "grey45") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", linewidth = 0.35, color = "grey45") +
+  geom_text_repel(
+    data = top_tbl,
+    aes(label = gene),
+    size = 2.4,
+    box.padding = 0.35,
+    point.padding = 0.2,
+    min.segment.length = 0,
+    max.overlaps = Inf,
+    show.legend = FALSE,
+    segment.color = "grey55",
+    segment.size = 0.25
+  ) +
+  facet_wrap(~ method, scales = "free_y") +
+  scale_color_manual(values = c(setNames("#2C7BB6", paste("Up in", cell_a)), "Not significant" = "grey78", setNames("#D7191C", paste("Up in", cell_b)))) +
+  labs(
+    title = "RNA-seq Volcano Plot (Top 10 per direction labeled)",
+    x = "log2 fold change",
+    y = expression(-log[10](adjusted~p)),
+    color = NULL
+  ) +
+  theme_minimal(base_size = 11)
+ggsave(file.path(as.character(defaults$out_dir), "rna_volcano_labeled.pdf"), p_volcano, width = 10, height = 5.5)
+
+plot_combined_go <- function(go_df, out_path, title_text) {
+  go_df <- go_df[is.finite(go_df$p.adjust) & is.finite(go_df$fold_enrichment), , drop = FALSE]
+  if (nrow(go_df) == 0) return(invisible(NULL))
+  go_df <- do.call(rbind, lapply(split(go_df, list(go_df$method, go_df$direction), drop = TRUE), function(x) {
+    top <- head(x[order(x$p.adjust), , drop = FALSE], 10)
+    top
+  }))
+  go_df$signed_fold <- ifelse(go_df$direction == paste("Up in", cell_a), -abs(go_df$fold_enrichment), abs(go_df$fold_enrichment))
+  go_df <- go_df[order(go_df$method, go_df$signed_fold), , drop = FALSE]
+  go_df$term_label <- stringr::str_wrap(go_df$Description, width = 45)
+  go_df$term_key <- paste0(go_df$term_label, "___", seq_len(nrow(go_df)))
+  go_df$term_key <- factor(go_df$term_key, levels = unique(go_df$term_key))
+  p <- ggplot(go_df, aes(x = signed_fold, y = term_key, fill = direction)) +
+    geom_col(width = 0.75, alpha = 0.9) +
     facet_wrap(~ method, scales = "free_y") +
-    scale_fill_manual(values = c("Up in CMP" = "#67A9CF", "Up in Erythroblast" = "#EF8A62")) +
+    scale_fill_manual(values = c(setNames("#2C7BB6", paste("Up in", cell_a)), setNames("#D7191C", paste("Up in", cell_b)))) +
+    scale_y_discrete(labels = function(x) sub("___[0-9]+$", "", x)) +
     labs(
-      title = "Top Upregulated Genes in CMP vs Erythroblast",
-      x = "Absolute fold change",
-      y = "Gene",
+      title = title_text,
+      x = "Signed fold enrichment (absolute magnitude)",
+      y = "Biological process",
       fill = NULL
     ) +
-    theme_minimal(base_size = 11) +
+    theme_minimal(base_size = 10) +
     theme(
       panel.grid.major.y = element_blank(),
-      legend.position = "top"
+      legend.position = "right"
     )
+  ggsave(out_path, p, width = 12, height = 7)
+}
 
-  ggsave(
-    "results/summary/top10_upregulated_cmp_vs_ery_comparison_barplot.pdf",
-    plot = p,
-    width = 10,
-    height = 8
+rna_go <- rbind(
+  simplified_go_from_rna(deseq_all, "log2FoldChange", "padj", "DESeq2", cell_a, cell_b),
+  simplified_go_from_rna(limma_all, "logFC", "adj.P.Val", "limma-voom", cell_a, cell_b)
+)
+write.csv(rna_go, file.path(as.character(defaults$out_dir), "rna_go_simplified_combined.csv"), row.names = FALSE)
+plot_combined_go(rna_go, file.path(as.character(defaults$out_dir), "rna_go_directional_barplot.pdf"), "RNA GO Enrichment (top directional terms)")
+
+deseq_sig_ids <- significant_genes(deseq_tbl)
+limma_sig_ids <- significant_genes(limma_tbl)
+all_ids <- unique(c(deseq_sig_ids, limma_sig_ids))
+venn_input <- cbind(DESeq2 = all_ids %in% deseq_sig_ids, limma_voom = all_ids %in% limma_sig_ids)
+pdf(file.path(as.character(defaults$out_dir), "rna_method_overlap_venn.pdf"), width = 6, height = 6)
+vennDiagram(vennCounts(venn_input), main = "DE Gene Overlap: DESeq2 vs limma-voom")
+grid.text(
+  sprintf(
+    "DESeq2: %d   limma-voom: %d   overlap: %d",
+    length(deseq_sig_ids),
+    length(limma_sig_ids),
+    length(intersect(deseq_sig_ids, limma_sig_ids))
+  ),
+  y = unit(0.06, "npc")
+)
+dev.off()
+
+shared <- merge(
+  deseq_tbl[, c("gene_id", "log2fc")],
+  limma_tbl[, c("gene_id", "log2fc")],
+  by = "gene_id",
+  suffixes = c("_deseq2", "_limma")
+)
+if (nrow(shared) > 0) {
+  shared$support_class <- ifelse(
+    shared$gene_id %in% deseq_sig_ids & shared$gene_id %in% limma_sig_ids,
+    "Called by both",
+    ifelse(
+      shared$gene_id %in% deseq_sig_ids,
+      "DESeq2 only",
+      ifelse(shared$gene_id %in% limma_sig_ids, "limma-voom only", "Not DE in either")
+    )
   )
+  r <- suppressWarnings(cor(shared$log2fc_deseq2, shared$log2fc_limma, method = "pearson"))
+  p <- ggplot(shared, aes(x = log2fc_deseq2, y = log2fc_limma, color = support_class)) +
+    geom_hline(yintercept = 0, linewidth = 0.25, color = "grey60") +
+    geom_vline(xintercept = 0, linewidth = 0.25, color = "grey60") +
+    geom_point(alpha = 0.5, size = 0.8) +
+    scale_color_manual(
+      values = c(
+        "Called by both" = "#1b9e77",
+        "DESeq2 only" = "#d95f02",
+        "limma-voom only" = "#7570b3",
+        "Not DE in either" = "grey75"
+      )
+    ) +
+    labs(
+      title = sprintf("RNA DESeq2 vs limma-voom Concordance (r = %.3f)", r),
+      x = "DESeq2 log2FC",
+      y = "limma-voom log2FC",
+      color = NULL
+    ) +
+    theme_minimal(base_size = 11)
+  ggsave(file.path(as.character(defaults$out_dir), "rna_method_pearson_concordance.pdf"), p, width = 6.5, height = 5.5)
 }

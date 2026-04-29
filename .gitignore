@@ -1,9 +1,11 @@
 *.Rproj*
 *.RData
 *.Rhistory
-# .md
+*.md
+*.txt
 project_description.txt
 *.DS_Store
 .Rproj.user
 data/
 *kehinde*
+*results-old*

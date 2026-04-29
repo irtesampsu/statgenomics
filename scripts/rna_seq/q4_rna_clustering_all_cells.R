@@ -1,24 +1,38 @@
 suppressPackageStartupMessages({
   library(DESeq2)
   library(pheatmap)
-  library(ComplexHeatmap)
-  library(circlize)
-  library(grid)
-  library(AnnotationDbi)
-  library(org.Mm.eg.db)
 })
 
 source("scripts/utils/rna_utils.R")
 
-dir.create("results/clustering/q4_rna_all_cells", recursive = TRUE, showWarnings = FALSE)
+args <- commandArgs(trailingOnly = TRUE)
+defaults <- list(
+  cells = "CMP,CFUE,Erythroblast",
+  out_dir = "results/clustering/q4_rna_all_cells",
+  deseq_path = "results/deseq2/de_genes_deseq2.csv",
+  limma_path = "results/limma_voom/de_genes_limma_voom.csv",
+  top_n = "1000"
+)
+if (length(args) %% 2 != 0) stop("Arguments must be passed as --key value pairs.")
+if (length(args) > 0) {
+  keys <- sub("^--", "", args[seq(1, length(args), by = 2)])
+  vals <- args[seq(2, length(args), by = 2)]
+  for (i in seq_along(keys)) defaults[[keys[i]]] <- vals[i]
+}
 
+cells <- trimws(strsplit(as.character(defaults$cells), ",", fixed = TRUE)[[1]])
+out_dir <- as.character(defaults$out_dir)
+top_n <- as.integer(defaults$top_n)
+
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 sample_info <- get_all_rna_scriptseq()
+sample_info <- sample_info[sample_info$condition %in% cells, , drop = FALSE]
 counts <- build_rna_count_matrix(sample_info)
 counts <- filter_rna_counts(counts, min_count = 10L, min_samples = 2L)
 
 sample_info$condition <- factor(
   sample_info$condition,
-  levels = c("HSC", "CMP", "CFUE", "Erythroblast")
+  levels = cells
 )
 sample_info$cell_line <- sample_info$condition
 
@@ -29,95 +43,70 @@ dds <- DESeqDataSetFromMatrix(
 )
 rownames(colData(dds)) <- sample_info$sample
 
+dds <- estimateSizeFactors(dds)
 vsd <- vst(dds, blind = TRUE)
-vsd_mat <- assay(vsd)
+vsd_mat_full <- assay(vsd)  # normalized log2-scale matrix
+
+read_results <- function(path) read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+clean_ensembl <- function(x) sub("\\..*$", "", x)
+select_top_ids <- function(df, fc_col, padj_col, n) {
+  keep <- !is.na(df[[fc_col]]) & !is.na(df[[padj_col]])
+  d <- df[keep, , drop = FALSE]
+  d$gene_clean <- clean_ensembl(d$gene_id)
+  d <- d[order(d[[padj_col]], -abs(d[[fc_col]])), , drop = FALSE]
+  unique(head(d$gene_clean, n))
+}
+
+deseq_df <- read_results(as.character(defaults$deseq_path))
+limma_df <- read_results(as.character(defaults$limma_path))
+selected_ids <- unique(c(
+  select_top_ids(deseq_df, "log2FoldChange", "padj", top_n),
+  select_top_ids(limma_df, "logFC", "adj.P.Val", top_n)
+))
+row_ids <- clean_ensembl(rownames(vsd_mat_full))
+vsd_mat <- vsd_mat_full[row_ids %in% selected_ids, , drop = FALSE]
+if (nrow(vsd_mat) == 0) stop("No overlapping top differential genes found for clustering matrix.")
 
 sample_cor <- cor(vsd_mat)
-write.csv(sample_cor, "results/clustering/q4_rna_all_cells/sample_correlation.csv")
 
 sample_group_annot <- data.frame("Cell line" = sample_info$cell_line, row.names = sample_info$sample, check.names = FALSE)
 
-pdf("results/clustering/q4_rna_all_cells/sample_correlation_heatmap.pdf", width = 7, height = 6)
+pdf(file.path(out_dir, "sample_correlation_heatmap.pdf"), width = 7, height = 6)
 pheatmap(
   sample_cor,
   annotation_col = sample_group_annot,
   annotation_row = sample_group_annot,
-  main = "RNA-seq Sample Correlation"
+  main = "RNA Sample Correlation (top DE genes, log2 scale)"
 )
 dev.off()
 
-sample_dist <- dist(t(vsd_mat))
-hc <- hclust(sample_dist)
-
-pdf("results/clustering/q4_rna_all_cells/sample_hclust.pdf", width = 8, height = 6)
-plot(hc, main = "Q4 RNA-seq Hierarchical Clustering")
+pdf(file.path(out_dir, "sample_pca.pdf"), width = 7, height = 6)
+pca_obj <- prcomp(t(vsd_mat), center = TRUE, scale. = FALSE)
+pca_df <- data.frame(
+  PC1 = pca_obj$x[, 1],
+  PC2 = pca_obj$x[, 2],
+  cell_line = sample_info$cell_line,
+  sample = colnames(vsd_mat),
+  stringsAsFactors = FALSE
+)
+plot(
+  pca_df$PC1,
+  pca_df$PC2,
+  col = as.integer(pca_df$cell_line),
+  pch = 19,
+  xlab = "PC1",
+  ylab = "PC2",
+  main = "RNA PCA (top DE genes, log2 scale)"
+)
+text(pca_df$PC1, pca_df$PC2, labels = pca_df$sample, pos = 3, cex = 0.7)
+legend("topright", legend = levels(sample_info$cell_line), col = seq_along(levels(sample_info$cell_line)), pch = 19, bty = "n")
 dev.off()
 
-pdf("results/clustering/q4_rna_all_cells/sample_pca.pdf", width = 7, height = 6)
-print(plotPCA(vsd, intgroup = "cell_line"))
+pdf(file.path(out_dir, "top_differential_genes_heatmap.pdf"), width = 8, height = 9)
+pheatmap(
+  t(scale(t(vsd_mat))),
+  annotation_col = sample_group_annot,
+  show_rownames = FALSE,
+  main = "RNA Heatmap (top DE genes, row-scaled log2 values)"
+)
 dev.off()
-
-gene_var <- apply(vsd_mat, 1, var)
-top_gene_ids <- names(sort(gene_var, decreasing = TRUE))[seq_len(min(50, length(gene_var)))]
-top_gene_mat <- vsd_mat[top_gene_ids, , drop = FALSE]
-top_gene_scaled <- t(scale(t(top_gene_mat)))
-top_gene_scaled[is.na(top_gene_scaled)] <- 0
-
-ensembl_ids <- sub("\\..*$", "", rownames(top_gene_scaled))
-gene_symbols <- suppressMessages(
-  AnnotationDbi::mapIds(
-    org.Mm.eg.db,
-    keys = ensembl_ids,
-    column = "SYMBOL",
-    keytype = "ENSEMBL",
-    multiVals = "first"
-  )
-)
-gene_labels <- ifelse(is.na(gene_symbols) | !nzchar(gene_symbols), ensembl_ids, unname(gene_symbols))
-rownames(top_gene_scaled) <- make.unique(gene_labels)
-
-cell_line_levels <- levels(sample_info$condition)
-cell_line_colors <- c(
-  HSC = "#4DAF4A",
-  CMP = "#E78AC3",
-  CFUE = "#4DBBD5",
-  Erythroblast = "#8A6BBE"
-)
-cell_line_colors <- cell_line_colors[cell_line_levels]
-
-ha_top <- HeatmapAnnotation(
-  `Cell line` = sample_info$condition,
-  col = list(`Cell line` = cell_line_colors),
-  annotation_name_side = "left",
-  annotation_name_gp = gpar(fontsize = 10),
-  show_annotation_name = TRUE
-)
-
-heat_cols <- colorRamp2(c(-2, 0, 2), c("#2C7BB6", "white", "#D7191C"))
-
-pdf("results/clustering/q4_rna_all_cells/top_variable_genes_heatmap.pdf", width = 8, height = 10)
-ht <- Heatmap(
-  top_gene_scaled,
-  name = "Expression\n(z-score)",
-  col = heat_cols,
-  top_annotation = ha_top,
-  show_row_names = TRUE,
-  row_names_side = "right",
-  row_names_gp = gpar(fontsize = 6),
-  show_column_names = TRUE,
-  column_title = "Top Variable RNA-seq Genes",
-  cluster_rows = TRUE,
-  cluster_columns = TRUE
-)
-draw(ht, heatmap_legend_side = "bottom", annotation_legend_side = "top")
-dev.off()
-
-cluster_summary <- c(
-  "Question 4 guidance",
-  "Inputs were validated against the ScriptSeq sample manifest before analysis.",
-  "Heatmap interpretation note: the top annotation bar is sample group identity (cell line), while the heatmap body is row-scaled expression intensity (relative high/low per gene, not raw counts).",
-  "Use sample_hclust.pdf and sample_pca.pdf to describe how the cell types relate.",
-  "Use top_variable_genes_heatmap.pdf to describe gene clusters that rise or fall across the lineage.",
-  "Biological expectation: HSC should be the most distinct stem-like group, CMP should be intermediate, and CFUE/Erythroblast should be closer to each other than to HSC."
-)
-writeLines(cluster_summary, "results/clustering/q4_rna_all_cells/README.txt")
