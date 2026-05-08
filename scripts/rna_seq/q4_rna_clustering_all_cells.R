@@ -1,5 +1,7 @@
 suppressPackageStartupMessages({
   library(DESeq2)
+  library(ggplot2)
+  library(ggrepel)
   library(pheatmap)
 })
 
@@ -7,7 +9,7 @@ source("scripts/utils/rna_utils.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 defaults <- list(
-  cells = "CMP,CFUE,Erythroblast",
+  cells = "CMP,CFUE,HSC,Erythroblast",
   out_dir = "results/clustering/q4_rna_all_cells",
   deseq_path = "results/deseq2/de_genes_deseq2.csv",
   limma_path = "results/limma_voom/de_genes_limma_voom.csv",
@@ -80,8 +82,8 @@ pheatmap(
 )
 dev.off()
 
-pdf(file.path(out_dir, "sample_pca.pdf"), width = 7, height = 6)
-pca_obj <- prcomp(t(vsd_mat), center = TRUE, scale. = FALSE)
+pca_obj <- stats::prcomp(t(vsd_mat), center = TRUE, scale. = FALSE)
+var_expl <- summary(pca_obj)$importance[2, ] * 100
 pca_df <- data.frame(
   PC1 = pca_obj$x[, 1],
   PC2 = pca_obj$x[, 2],
@@ -89,18 +91,53 @@ pca_df <- data.frame(
   sample = colnames(vsd_mat),
   stringsAsFactors = FALSE
 )
-plot(
-  pca_df$PC1,
-  pca_df$PC2,
-  col = as.integer(pca_df$cell_line),
-  pch = 19,
-  xlab = "PC1",
-  ylab = "PC2",
-  main = "RNA PCA (top DE genes, log2 scale)"
+pca_df$cell_line <- factor(pca_df$cell_line, levels = cells)
+pal <- stats::setNames(
+  grDevices::colorRampPalette(c("#2166AC", "#FDAE61", "#B2182B"))(length(cells)),
+  cells
 )
-text(pca_df$PC1, pca_df$PC2, labels = pca_df$sample, pos = 3, cex = 0.7)
-legend("topright", legend = levels(sample_info$cell_line), col = seq_along(levels(sample_info$cell_line)), pch = 19, bty = "n")
-dev.off()
+xr <- range(pca_df$PC1)
+yr <- range(pca_df$PC2)
+pad_x <- max(diff(xr) * 0.28, 0.5)
+pad_y <- max(diff(yr) * 0.28, 0.5)
+x_bounds <- c(xr[1] - pad_x, xr[2] + pad_x)
+y_bounds <- c(yr[1] - pad_y, yr[2] + pad_y)
+xl <- sprintf("PC1 (%.1f%% variance)", var_expl[1])
+yl <- sprintf("PC2 (%.1f%% variance)", var_expl[2])
+
+p_pca <- ggplot(pca_df, aes(PC1, PC2, color = cell_line)) +
+  geom_point(size = 3.6, alpha = 0.92) +
+  geom_text_repel(
+    aes(label = sample),
+    size = 3,
+    segment.size = 0.28,
+    segment.color = "grey55",
+    box.padding = 0.45,
+    point.padding = 0.28,
+    min.segment.length = 0,
+    max.overlaps = Inf,
+    xlim = x_bounds,
+    ylim = y_bounds,
+    show.legend = FALSE
+  ) +
+  scale_color_manual(values = pal, drop = FALSE, name = "Cell line") +
+  coord_cartesian(
+    xlim = x_bounds,
+    ylim = y_bounds,
+    expand = FALSE,
+    clip = "on"
+  ) +
+  labs(title = "RNA-seq PCA (top DE genes, vst)", x = xl, y = yl) +
+  theme_bw(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    legend.justification = "center",
+    plot.margin = margin(14, 18, 20, 18),
+    panel.grid.minor = element_blank()
+  ) +
+  guides(color = guide_legend(nrow = 1, byrow = TRUE, override.aes = list(size = 4)))
+
+ggsave(file.path(out_dir, "sample_pca.pdf"), p_pca, width = 8, height = 7.2)
 
 pdf(file.path(out_dir, "top_differential_genes_heatmap.pdf"), width = 8, height = 9)
 pheatmap(

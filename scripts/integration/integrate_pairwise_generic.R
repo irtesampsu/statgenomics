@@ -67,36 +67,52 @@ prepare_atac_gene_table <- function(atac_df) {
 dir.create(defaults$out_dir, recursive = TRUE, showWarnings = FALSE)
 deseq_tbl <- prepare_rna_method(read_results(defaults$deseq_path), "log2FoldChange", "padj")
 limma_tbl <- prepare_rna_method(read_results(defaults$limma_path), "logFC", "adj.P.Val")
-atac_tbl <- prepare_atac_gene_table(read_results(defaults$atac_annot_path))
 
-rna_shared <- merge(deseq_tbl[, c("gene_id", "fold_change")], limma_tbl[, c("gene_id", "fold_change")], by = "gene_id", suffixes = c("_deseq2", "_limma"))
+rna_shared <- merge(
+  deseq_tbl[, c("gene_id", "fold_change")],
+  limma_tbl[, c("gene_id", "fold_change")],
+  by = "gene_id",
+  suffixes = c("_deseq2", "_limma")
+)
 rna_shared$mean_rna_log2fc <- rowMeans(rna_shared[, c("fold_change_deseq2", "fold_change_limma")], na.rm = TRUE)
-atac_tbl$ensembl_id <- clean_ensembl(atac_tbl$ensembl_id)
-quad <- merge(rna_shared[, c("gene_id", "mean_rna_log2fc")], atac_tbl[, c("ensembl_id", "mean_log2FoldChange", "representative_annotation")], by.x = "gene_id", by.y = "ensembl_id")
-quad$concordance <- ifelse(sign(quad$mean_rna_log2fc) == sign(quad$mean_log2FoldChange), "Concordant", "Discordant")
-quad$quadrant <- ifelse(
-  quad$mean_rna_log2fc >= 0 & quad$mean_log2FoldChange >= 0, "Q1: RNA up, ATAC up",
-  ifelse(
-    quad$mean_rna_log2fc < 0 & quad$mean_log2FoldChange >= 0, "Q2: RNA down, ATAC up",
+
+make_concordance_plot <- function(atac_annot_path, out_file, title_suffix = NULL) {
+  if (!file.exists(atac_annot_path)) return(invisible(NULL))
+  atac_tbl <- prepare_atac_gene_table(read_results(atac_annot_path))
+  if (nrow(atac_tbl) == 0) return(invisible(NULL))
+  atac_tbl$ensembl_id <- clean_ensembl(atac_tbl$ensembl_id)
+
+  quad <- merge(
+    rna_shared[, c("gene_id", "mean_rna_log2fc")],
+    atac_tbl[, c("ensembl_id", "mean_log2FoldChange", "representative_annotation")],
+    by.x = "gene_id",
+    by.y = "ensembl_id"
+  )
+  if (nrow(quad) == 0) return(invisible(NULL))
+
+  quad$concordance <- ifelse(sign(quad$mean_rna_log2fc) == sign(quad$mean_log2FoldChange), "Concordant", "Discordant")
+  quad$quadrant <- ifelse(
+    quad$mean_rna_log2fc >= 0 & quad$mean_log2FoldChange >= 0, "Q1: RNA up, ATAC up",
     ifelse(
-      quad$mean_rna_log2fc < 0 & quad$mean_log2FoldChange < 0, "Q3: RNA down, ATAC down",
-      "Q4: RNA up, ATAC down"
+      quad$mean_rna_log2fc < 0 & quad$mean_log2FoldChange >= 0, "Q2: RNA down, ATAC up",
+      ifelse(
+        quad$mean_rna_log2fc < 0 & quad$mean_log2FoldChange < 0, "Q3: RNA down, ATAC down",
+        "Q4: RNA up, ATAC down"
+      )
     )
   )
-)
 
-top_gene_ids <- head(quad$gene_id[order(-(abs(quad$mean_rna_log2fc) + abs(quad$mean_log2FoldChange)))], 20)
-top_gene_ids <- unique(top_gene_ids[!is.na(top_gene_ids) & nzchar(top_gene_ids)])
-top_symbols <- map_ensembl_to_symbol(top_gene_ids)
-symbol_map <- setNames(top_symbols, top_gene_ids)
-quad$gene_label <- ifelse(
-  quad$gene_id %in% names(symbol_map) & !is.na(symbol_map[quad$gene_id]) & nzchar(symbol_map[quad$gene_id]),
-  unname(symbol_map[quad$gene_id]),
-  quad$gene_id
-)
-quad$label_flag <- quad$gene_id %in% top_gene_ids
+  top_gene_ids <- head(quad$gene_id[order(-(abs(quad$mean_rna_log2fc) + abs(quad$mean_log2FoldChange)))], 20)
+  top_gene_ids <- unique(top_gene_ids[!is.na(top_gene_ids) & nzchar(top_gene_ids)])
+  top_symbols <- map_ensembl_to_symbol(top_gene_ids)
+  symbol_map <- setNames(top_symbols, top_gene_ids)
+  quad$gene_label <- ifelse(
+    quad$gene_id %in% names(symbol_map) & !is.na(symbol_map[quad$gene_id]) & nzchar(symbol_map[quad$gene_id]),
+    unname(symbol_map[quad$gene_id]),
+    quad$gene_id
+  )
+  quad$label_flag <- quad$gene_id %in% top_gene_ids
 
-if (nrow(quad) > 0) {
   q_counts <- as.data.frame(table(quad$quadrant), stringsAsFactors = FALSE)
   colnames(q_counts) <- c("quadrant", "n")
   q_labels <- data.frame(
@@ -109,6 +125,11 @@ if (nrow(quad) > 0) {
   )
   q_labels <- merge(q_labels, q_counts, by = "quadrant", all.x = TRUE)
   q_labels$n[is.na(q_labels$n)] <- 0
+
+  title_text <- sprintf("RNA-ATAC Direction Concordance: %s vs %s", defaults$cell_b, defaults$cell_a)
+  if (!is.null(title_suffix) && nzchar(title_suffix)) {
+    title_text <- sprintf("%s (%s)", title_text, title_suffix)
+  }
 
   p <- ggplot(quad, aes(mean_rna_log2fc, mean_log2FoldChange, color = concordance)) +
     geom_hline(yintercept = 0, linewidth = 0.25, color = "grey60") +
@@ -131,6 +152,27 @@ if (nrow(quad) > 0) {
       color = "grey20"
     ) +
     theme_minimal(base_size = 11) +
-    labs(title = sprintf("RNA-ATAC Direction Concordance: %s vs %s", defaults$cell_b, defaults$cell_a), x = "Mean RNA log2FC", y = "ATAC mean log2FC")
-  ggsave(file.path(defaults$out_dir, "rna_atac_quadrant_plot.pdf"), plot = p, width = 8, height = 6)
+    labs(title = title_text, x = "Mean RNA log2FC", y = "ATAC mean log2FC")
+
+  ggsave(file.path(defaults$out_dir, out_file), plot = p, width = 8, height = 6)
 }
+
+# Consensus (existing output path retained)
+make_concordance_plot(
+  defaults$atac_annot_path,
+  "rna_atac_quadrant_plot.pdf",
+  "consensus ATAC DARs"
+)
+
+# Optional method-specific concordance plots if ATAC per-method annotations exist.
+atac_dir <- dirname(defaults$atac_annot_path)
+make_concordance_plot(
+  file.path(atac_dir, "DARs_annotated_deseq2.csv"),
+  "rna_atac_quadrant_plot_deseq2.pdf",
+  "ATAC DESeq2 DARs"
+)
+make_concordance_plot(
+  file.path(atac_dir, "DARs_annotated_limma_voom.csv"),
+  "rna_atac_quadrant_plot_limma_voom.pdf",
+  "ATAC limma-voom DARs"
+)

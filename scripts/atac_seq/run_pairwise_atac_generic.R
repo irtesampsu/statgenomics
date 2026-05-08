@@ -313,17 +313,51 @@ if (length(method_results) == 2) {
   all_ids <- unique(c(d1, d2))
   if (length(all_ids) > 0) {
     venn_input <- cbind(DESeq2 = all_ids %in% d1, limma_voom = all_ids %in% d2)
-    pdf(file.path(out_dir, "atac_method_overlap_venn.pdf"), width = 6, height = 6)
-    vennDiagram(vennCounts(venn_input), main = "ATAC DAR Overlap: DESeq2 vs limma-voom")
+    pdf(file.path(out_dir, "atac_method_overlap_venn.pdf"), width = 7.2, height = 6.8)
+    grid::grid.newpage()
+    if (!requireNamespace("VennDiagram", quietly = TRUE)) {
+      stop("Package 'VennDiagram' is required for colored overlap Venn plots. Install with: install.packages('VennDiagram')")
+    }
+    VennDiagram::draw.pairwise.venn(
+      area1 = length(unique(d1)),
+      area2 = length(unique(d2)),
+      cross.area = length(intersect(unique(d1), unique(d2))),
+      category = c("DESeq2", "limma-voom"),
+      fill = c("#2C7BB6", "#D7191C"),
+      alpha = c(0.45, 0.45), # overlap appears as a distinct blended color
+      col = c("#2C7BB6", "#D7191C"),
+      lwd = 2,
+      cex = 1.45,
+      cat.cex = 1.1,
+      cat.col = c("#2C7BB6", "#D7191C"),
+      cat.pos = c(180, 0),
+      cat.dist = c(0.06, 0.06),
+      scaled = FALSE
+    )
+    grid::grid.text(
+      "ATAC DAR overlap: DESeq2 vs limma-voom",
+      y = grid::unit(0.95, "npc"),
+      gp = grid::gpar(cex = 1.15, col = "grey15", fontface = "bold")
+    )
+    grid::grid.text(
+      sprintf(
+        "%s vs %s — DAR overlap\nDESeq2: %d   limma-voom: %d   intersection: %d",
+        cell_b,
+        cell_a,
+        length(unique(d1)),
+        length(unique(d2)),
+        length(intersect(unique(d1), unique(d2)))
+      ),
+      y = grid::unit(0.05, "npc"),
+      gp = grid::gpar(cex = 0.92, col = "grey25")
+    )
     dev.off()
   }
 }
 
-if (!exists("anno_final")) {
-  anno_final <- data.frame()
-}
-if (nrow(anno_final) > 0 && "annotation" %in% colnames(anno_final)) {
-  cls <- tolower(anno_final$annotation)
+plot_annotation_pie <- function(anno_df, out_file, title_text) {
+  if (nrow(anno_df) == 0 || !"annotation" %in% colnames(anno_df)) return(invisible(NULL))
+  cls <- tolower(anno_df$annotation)
   cls <- ifelse(grepl("^promoter", cls), "Promoter/TSS",
     ifelse(grepl("tes|downstream", cls), "TES/Downstream",
       ifelse(grepl("^exon", cls), "Exon",
@@ -332,7 +366,34 @@ if (nrow(anno_final) > 0 && "annotation" %in% colnames(anno_final)) {
     )
   )
   pie_counts <- table(cls)
-  pdf(file.path(out_dir, "atac_annotation_pie.pdf"), width = 7, height = 6)
-  pie(pie_counts, main = "ATAC DAR Annotation Composition")
+  pdf(out_file, width = 7, height = 6)
+  pie(pie_counts, main = title_text)
   dev.off()
+}
+
+if (!exists("anno_final")) {
+  anno_final <- data.frame()
+}
+
+# Keep original consensus pie output for downstream compatibility.
+plot_annotation_pie(
+  anno_final,
+  file.path(out_dir, "atac_annotation_pie.pdf"),
+  "ATAC DAR Annotation Composition (Consensus)"
+)
+
+# Also emit method-specific annotation pies when method-specific outputs exist.
+if ("deseq2" %in% names(anno_tables)) {
+  plot_annotation_pie(
+    anno_tables$deseq2,
+    file.path(out_dir, "atac_annotation_pie_deseq2.pdf"),
+    "ATAC DAR Annotation Composition (DESeq2)"
+  )
+}
+if ("limma_voom" %in% names(anno_tables)) {
+  plot_annotation_pie(
+    anno_tables$limma_voom,
+    file.path(out_dir, "atac_annotation_pie_limma_voom.pdf"),
+    "ATAC DAR Annotation Composition (limma-voom)"
+  )
 }

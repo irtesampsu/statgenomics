@@ -215,17 +215,47 @@ plot_combined_go(rna_go, file.path(as.character(defaults$out_dir), "rna_go_direc
 deseq_sig_ids <- significant_genes(deseq_tbl)
 limma_sig_ids <- significant_genes(limma_tbl)
 all_ids <- unique(c(deseq_sig_ids, limma_sig_ids))
-venn_input <- cbind(DESeq2 = all_ids %in% deseq_sig_ids, limma_voom = all_ids %in% limma_sig_ids)
-pdf(file.path(as.character(defaults$out_dir), "rna_method_overlap_venn.pdf"), width = 6, height = 6)
-vennDiagram(vennCounts(venn_input), main = "DE Gene Overlap: DESeq2 vs limma-voom")
+venn_input <- cbind(
+  DESeq2 = all_ids %in% deseq_sig_ids,
+  `limma-voom` = all_ids %in% limma_sig_ids
+)
+pdf(file.path(as.character(defaults$out_dir), "rna_method_overlap_venn.pdf"), width = 7.2, height = 6.8)
+grid::grid.newpage()
+if (!requireNamespace("VennDiagram", quietly = TRUE)) {
+  stop("Package 'VennDiagram' is required for colored overlap Venn plots. Install with: install.packages('VennDiagram')")
+}
+VennDiagram::draw.pairwise.venn(
+  area1 = length(deseq_sig_ids),
+  area2 = length(limma_sig_ids),
+  cross.area = length(intersect(deseq_sig_ids, limma_sig_ids)),
+  category = c("DESeq2", "limma-voom"),
+  fill = c("#2C7BB6", "#D7191C"),
+  alpha = c(0.45, 0.45), # overlap appears as a distinct blended color
+  col = c("#2C7BB6", "#D7191C"),
+  lwd = 2,
+  cex = 1.45,
+  cat.cex = 1.1,
+  cat.col = c("#2C7BB6", "#D7191C"),
+  cat.pos = c(180, 0),
+  cat.dist = c(0.06, 0.06),
+  scaled = FALSE
+)
+grid::grid.text(
+  "DE gene overlap: DESeq2 vs limma-voom",
+  y = grid::unit(0.95, "npc"),
+  gp = grid::gpar(cex = 1.15, col = "grey15", fontface = "bold")
+)
 grid.text(
   sprintf(
-    "DESeq2: %d   limma-voom: %d   overlap: %d",
+    "%s vs %s — padj < 0.05, |log2FC| > 1\nDESeq2: %d   limma-voom: %d   overlap: %d",
+    cell_b,
+    cell_a,
     length(deseq_sig_ids),
     length(limma_sig_ids),
     length(intersect(deseq_sig_ids, limma_sig_ids))
   ),
-  y = unit(0.06, "npc")
+  y = grid::unit(0.05, "npc"),
+  gp = grid::gpar(cex = 0.92, col = "grey25")
 )
 dev.off()
 

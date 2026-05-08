@@ -104,9 +104,14 @@ run_directional_go <- function(entrez_ids, universe_ids, label, method_label) {
     return(data.frame())
   }
   ego <- enrichGO(gene = entrez_ids, universe = universe_ids, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "BP", pAdjustMethod = "BH")
-  if (is.null(ego) || nrow(as.data.frame(ego)) == 0) return(data.frame())
-  ego <- simplify(ego, cutoff = 0.7, by = "p.adjust", select_fun = min)
-  out <- as.data.frame(ego)
+  if (is.null(ego)) return(data.frame())
+  ego_raw_df <- as.data.frame(ego)
+  if (nrow(ego_raw_df) == 0) return(data.frame())
+  ego_simplified <- simplify(ego, cutoff = 0.7, by = "p.adjust", select_fun = min)
+  out <- as.data.frame(ego_simplified)
+  # Keep simplify by default, but if it leaves too few terms,
+  # fall back to unsimplified terms so each direction can retain up to top 10.
+  if (nrow(out) < 10) out <- ego_raw_df
   if (nrow(out) == 0) return(out)
   out$direction <- label
   out$method <- method_label
@@ -180,3 +185,55 @@ plot_go_bar <- function(go_df, title_text, out_path) {
 }
 
 plot_go_bar(go_combined, "ATAC GO Enrichment (top directional terms)", file.path(out_dir, "atac_go_directional_barplot.pdf"))
+
+plot_annotation_pie <- function(anno_df, out_file, title_text) {
+  if (nrow(anno_df) == 0 || !"annotation" %in% colnames(anno_df)) return(invisible(NULL))
+  cls <- tolower(anno_df$annotation)
+  cls <- ifelse(grepl("^promoter", cls), "Promoter/TSS",
+    ifelse(grepl("tes|downstream", cls), "TES/Downstream",
+      ifelse(grepl("^exon", cls), "Exon",
+        ifelse(grepl("^intron", cls), "Intron", "Intergenic/Other")
+      )
+    )
+  )
+  pie_counts <- table(cls)
+  pct <- 100 * as.numeric(pie_counts) / sum(pie_counts)
+  pie_labels <- paste0(sprintf("%.1f", pct), "%")
+  pie_cols <- setNames(
+    c("#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F"),
+    c("Promoter/TSS", "TES/Downstream", "Exon", "Intron", "Intergenic/Other")
+  )
+  slice_cols <- unname(pie_cols[names(pie_counts)])
+  pdf(out_file, width = 7, height = 6)
+  pie(
+    pie_counts,
+    col = slice_cols,
+    labels = pie_labels,
+    main = title_text
+  )
+  legend(
+    "topright",
+    legend = names(pie_counts),
+    fill = slice_cols,
+    cex = 0.8,
+    bty = "n"
+  )
+  dev.off()
+}
+
+# Emit method-specific and consensus annotation pies so both ATAC methods are visible.
+plot_annotation_pie(
+  dar_deseq2,
+  file.path(out_dir, "atac_annotation_pie_deseq2.pdf"),
+  "ATAC DAR Annotation Composition (DESeq2)"
+)
+plot_annotation_pie(
+  dar_limma,
+  file.path(out_dir, "atac_annotation_pie_limma_voom.pdf"),
+  "ATAC DAR Annotation Composition (limma-voom)"
+)
+plot_annotation_pie(
+  dar,
+  file.path(out_dir, "atac_annotation_pie.pdf"),
+  "ATAC DAR Annotation Composition (Consensus)"
+)
